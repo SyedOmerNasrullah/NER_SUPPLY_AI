@@ -124,8 +124,80 @@ export function FactorBar({
 }
 
 /**
+ * One signed SHAP contribution, drawn from a centre line — delta D57.
+ *
+ * A left-anchored bar with a `+` in front of it cannot describe SHAP, because SHAP is signed:
+ * the model regularly finds that light traffic or a low closure rate is pushing predicted risk
+ * DOWN, and rendering that as "+5.05%" says the opposite of what the model found. Hiding the
+ * negative rows would be worse still — they are half the explanation of why a score is not
+ * higher than it is.
+ *
+ * So the axis sits in the middle. Right of it increases risk, left of it reduces risk, and the
+ * number on the right is the model's own value with its own sign.
+ */
+function SignedFactorBar({
+  factor,
+  shapValue,
+  unit,
+  scaleMax,
+  detail,
+  className,
+}: {
+  factor: string;
+  shapValue: number;
+  unit?: string;
+  scaleMax: number;
+  detail?: string;
+  className?: string;
+}) {
+  const magnitude = scaleMax > 0 ? (Math.abs(shapValue) / scaleMax) * 50 : 0;
+  const increases = shapValue >= 0;
+  return (
+    <div className={cn('grid grid-cols-[132px_1fr_62px] items-center gap-2.5', className)}>
+      <span className="truncate text-meta text-ink-2" title={detail ? `${factor} — ${detail}` : factor}>
+        {factor}
+      </span>
+
+      <div className="relative h-[9px] w-full rounded-[3px] bg-panel-sunk">
+        {/* The zero line. Everything is read against this. */}
+        <span aria-hidden className="absolute inset-y-[-2px] left-1/2 w-px -translate-x-1/2 bg-line" />
+        <div
+          className={cn(
+            'absolute top-0 h-full rounded-[3px] transition-[width,left,right] duration-700 ease-ui',
+            increases ? 'bg-risk-high' : 'bg-risk-low',
+          )}
+          style={
+            increases
+              ? { left: '50%', width: `${Math.max(1.5, magnitude)}%` }
+              : { right: '50%', width: `${Math.max(1.5, magnitude)}%` }
+          }
+        />
+      </div>
+
+      <span
+        className={cn(
+          'tnum text-right text-meta font-semibold',
+          increases ? 'text-risk-high' : 'text-risk-low',
+        )}
+        title={unit ? `${shapValue} ${unit}` : String(shapValue)}
+      >
+        {increases ? '+' : '\u2212'}
+        {Math.abs(shapValue).toFixed(2)}
+      </span>
+    </div>
+  );
+}
+
+/**
  * A full SHAP breakdown. Computes the shared scale itself so a caller cannot accidentally
  * render two factor groups on different scales and make them look comparable when they are not.
+ *
+ * Two renderings, chosen by what the data actually carries:
+ *
+ *   - `shapValue` present — the factor came from the model. Signed bars around a centre line,
+ *     labelled with the model's own value in risk points.
+ *   - `shapValue` absent  — a seeded fixture. The original magnitude bar, unchanged, because
+ *     there is no sign to show and inventing one would be a lie about a demo value.
  */
 export function FactorBreakdown({
   factors,
@@ -136,6 +208,29 @@ export function FactorBreakdown({
   level?: RiskLevel;
   className?: string;
 }) {
+  const signed = factors.filter((f) => typeof f.shapValue === 'number');
+  if (signed.length === factors.length && factors.length > 0) {
+    const scaleMax = factors.reduce((m, f) => Math.max(m, Math.abs(f.shapValue!)), 0);
+    return (
+      <div className={cn('flex flex-col gap-2', className)}>
+        {factors.map((f) => (
+          <SignedFactorBar
+            key={f.factor}
+            factor={f.factor}
+            shapValue={f.shapValue!}
+            unit={f.shapUnit}
+            scaleMax={scaleMax}
+            detail={f.value !== undefined ? `model input: ${f.value}` : undefined}
+          />
+        ))}
+        <p className="mt-0.5 text-[9.5px] leading-snug text-ink-3">
+          SHAP values in risk points. Right of the axis raised the prediction, left of it lowered
+          it.
+        </p>
+      </div>
+    );
+  }
+
   const scaleMax = factors.reduce((m, f) => Math.max(m, f.contributionPct), 0);
   return (
     <div className={cn('flex flex-col gap-2', className)}>

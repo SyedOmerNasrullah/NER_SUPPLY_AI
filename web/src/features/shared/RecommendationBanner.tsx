@@ -69,7 +69,14 @@ export function RecommendationBanner({
     ? recommendation!.recommendationText
     : accepted
       ? `The delivery is now assigned to ${current ? shortRouteName(current.name) : 'the recommended route'}. No further routing action is outstanding.`
-      : 'The assigned route is the lowest-risk candidate available. The corridor is being monitored; no routing action is outstanding.';
+      : // Not "the assigned route is the lowest-risk candidate" — it often is not, and saying so
+        // in front of a route strip showing otherwise is simply false. Once the scores are the
+        // model's, the assigned route can sit above a safer one without the engine firing,
+        // because REROUTE needs BOTH halves of its rule: risk at or over the threshold AND a
+        // candidate clearing the margin. When that is the situation, say that.
+        switchable && recommended && current && recommended.riskScore < current.riskScore
+        ? `${shortRouteName(recommended.name)} is ${current.riskScore - recommended.riskScore} points safer, which is not on its own a reason to move: rerouting also needs the assigned route at or above the risk threshold. The corridor is being monitored.`
+        : 'The assigned route is the lowest-risk candidate available. The corridor is being monitored; no routing action is outstanding.';
 
   const tone = active ? 'active' : accepted ? 'done' : 'idle';
 

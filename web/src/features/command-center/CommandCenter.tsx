@@ -46,6 +46,7 @@ import { useShellRailNote } from '@/shell/AppShell';
 import ridgeline from '@/assets/ner-ridgeline.jpg';
 import corridorRoad from '@/assets/ner-corridor-road.jpg';
 import { ConditionsPanel } from './ConditionsPanel';
+import { MlSystemStatus } from './MlSystemStatus';
 import { CorridorMapPanel } from './CorridorMapPanel';
 import { DeliveryIntelligencePanel } from './DeliveryIntelligencePanel';
 import { KpiStrip } from './KpiStrip';
@@ -115,6 +116,7 @@ export function CommandCenter() {
   const onSelectRoute = useCallback((routeId: string) => setSelectedRouteId(routeId), []);
 
   // --- The demo control ---------------------------------------------------
+  const mlStatus = useResource(() => dataSource.getMlStatus(), []);
   const simulate = useAction(() => dataSource.simulateRain(DEMO_SEGMENT_ID));
   const simulated = weather.data?.weather.simulated ?? false;
 
@@ -149,6 +151,7 @@ export function CommandCenter() {
         }
         right={
           <div className="flex items-stretch gap-3">
+            <MlSystemStatus status={mlStatus.data} loading={mlStatus.loading} />
             <SystemStatus simulated={simulated} pending={simulate.pending} />
             <ConditionsPanel
               weather={weather.data?.weather}

@@ -104,7 +104,27 @@ export interface Vehicle {
 /** One SHAP contribution, normalised for display. Top factors need not sum to 100. */
 export interface RiskFactor {
   factor: string;
+  /**
+   * Share of the total attribution, as a percentage of the summed absolute SHAP magnitudes.
+   * Always positive — it is a magnitude, not a direction. Read `shapValue` for the sign.
+   */
   contributionPct: number;
+
+  // --- Present when the factor came from the model (delta D57) ---------------
+  //
+  // The API returns these on every `ML_PREDICTION` row; they are absent on a seeded fixture,
+  // which is exactly how the UI tells the two apart. Never synthesise them.
+
+  /** The raw SHAP value, signed, in the unit below. Negative means it REDUCED predicted risk. */
+  shapValue?: number;
+  /** What `shapValue` is measured in, e.g. `risk_points`. */
+  shapUnit?: string;
+  /** The model's own feature name, e.g. `roadCondition`. */
+  feature?: string;
+  /** The input the model actually received for that feature, e.g. `POOR` or `4210`. */
+  value?: string | number;
+  /** The model service's own reading of the sign. */
+  direction?: 'increases_risk' | 'decreases_risk';
 }
 
 /**

@@ -28,6 +28,7 @@ import { toDelivery, toIncident, toRecommendation, toUser } from '../services/ma
 import { distanceToSegmentKm, matchCorridor, type SegmentMatch } from '../domain/geo';
 import { classifyIncidentImage } from '../services/gemini';
 import { cascadeFromIncident } from '../services/incidentCascade';
+import { scoreCorridor } from '../services/routeRiskScoring';
 
 export const writes = Router();
 
@@ -392,7 +393,32 @@ writes.post(
     if (!segment) throw ApiError.notFound('Segment');
 
     const affectedSegmentIds = await simulateRain(segmentId);
-    res.json({ updated: true, affectedSegmentIds });
+
+    // Re-score before answering — delta D57.
+    //
+    // The simulation used to change the weather and stop there. Nothing re-ran the model, so
+    // `/routes/candidates` went on serving the prediction made under the old conditions and the
+    // storm had no visible effect on any risk score: the demonstration's whole point, silently
+    // missing. The corridor is genuinely wetter now, so the model genuinely has something new
+    // to say — this asks it, and stores the answer under the `heavy_rain` scenario the way
+    // every other scoring run does.
+    //
+    // Failure here is not a failure of the simulation. The weather really did change; if the
+    // model service is down the caller is told so and the stored predictions stay as they were,
+    // which the status rail already reports as stale rather than fresh.
+    let rescored: { label: string; riskScore: number }[] | null = null;
+    let modelVersion: string | null = null;
+    try {
+      const corridor = await scoreCorridor();
+      rescored = corridor.scored
+        .filter((c) => c.entityType === 'ROUTE')
+        .map((c) => ({ label: c.label, riskScore: c.prediction.riskScore }));
+      modelVersion = corridor.scored[0]?.prediction.modelVersion ?? null;
+    } catch {
+      rescored = null;
+    }
+
+    res.json({ updated: true, affectedSegmentIds, rescored, modelVersion });
   }),
 );
 

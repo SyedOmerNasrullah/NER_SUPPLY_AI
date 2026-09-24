@@ -7,6 +7,7 @@
  * conditions, then the model's factor attribution, then the narration.
  */
 
+import { ModelTrace } from '../shared/ModelTrace';
 import { cn } from '@/lib/cn';
 import { formatNumber, humanizeEnum } from '@/domain/format';
 import { RISK_TONE } from '@/domain/thresholds';
@@ -43,11 +44,14 @@ function trafficLabel(level: number): string {
 export function RouteRiskAnalysis({
   route,
   segments = [],
+  decisionNote,
   className,
 }: {
   route: RouteCandidate;
   /** Corridor segments, to name the ones this route travels (contract delta D39). */
   segments?: RouteSegment[];
+  /** What the deterministic engine did with this score, passed down for the model trace. */
+  decisionNote?: string;
   className?: string;
 }) {
   const tone = RISK_TONE[route.riskLevel];
@@ -130,6 +134,9 @@ export function RouteRiskAnalysis({
         routeName={route.name}
         heading="Why is this route risky?"
       />
+
+      {/* --- The arithmetic behind the score -------------------------------- */}
+      <ModelTrace route={route} decisionNote={decisionNote} />
 
       {/* --- The corridor this route actually travels ------------------------ */}
       {route.segmentIds ? (
