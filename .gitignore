@@ -1,0 +1,18 @@
+node_modules
+dist
+*.tsbuildinfo
+.DS_Store
+
+# Secrets — never commit. Only .env.example (placeholders) is tracked.
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# The training dataset is regenerated deterministically from its seed; its hash is in the
+# model metadata. The trained artifact itself IS committed.
+ml/data/*.csv

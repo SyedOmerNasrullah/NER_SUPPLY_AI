@@ -1,0 +1,15 @@
+# NER-SupplyAI internal ML service — Phase 5A (route risk only).
+# Pinned to the versions the original backend's ml-service ran on this machine under
+# Python 3.14, so the native wheels (numpy, xgboost, shap's numba) are known to load here.
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+python-dotenv==1.2.3
+numpy==2.5.3
+pandas==3.0.5
+scikit-learn==1.9.0
+xgboost==3.4.1
+shap==0.52.0
+# tests
+pytest==9.0.2
+httpx==0.28.1

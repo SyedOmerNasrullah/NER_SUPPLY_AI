@@ -1,0 +1,16 @@
+{
+  // Path mapping for `npm run export:world` ONLY, consumed by tsx (esbuild), which strips types
+  // rather than checking them. It is deliberately not part of `npm run typecheck`: typechecking
+  // the exporter pulls the frontend's entire Vite module graph — image imports, its own rootDir
+  // — into this project, which proves nothing about the API. The exporter is verified by
+  // running it, and its output is verified by `npm run verify`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@web/*": ["../web/src/*"],
+      "@/*": ["../web/src/*"]
+    }
+  },
+  "include": ["scripts/**/*.ts"]
+}

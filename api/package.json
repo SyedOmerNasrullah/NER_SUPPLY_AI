@@ -1,0 +1,57 @@
+{
+  "name": "ner-supplyai-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "NER-SupplyAI public API \u2014 Express + Prisma over PostgreSQL",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "tsx prisma/seed.ts",
+    "export:world": "tsx --tsconfig tsconfig.export.json scripts/export-demo-world.ts",
+    "verify": "tsx scripts/verify.ts",
+    "test:ml": "tsx --test tests/ml.test.ts",
+    "ml:report": "tsx scripts/ml-regression-report.ts",
+    "test:incidents": "tsx --test tests/incidents.test.ts",
+    "test:sms": "tsx --test tests/notifications.test.ts",
+    "test:delivery-risk": "tsx --test tests/deliveryRisk.test.ts",
+    "test:intelligence": "tsx --test tests/intelligence.test.ts",
+    "test:cascade": "tsx --test tests/cascade.test.ts",
+    "routes:generate": "tsx scripts/generate-routes.ts",
+    "routes:apply": "tsx scripts/generate-routes.ts --from-artifact",
+    "test:routes": "tsx --test tests/routes.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.3.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^22.20.2",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "qs": "^6.15.4"
+  }
+}

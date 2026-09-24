@@ -1,0 +1,162 @@
+{
+  "modelVersion": "route-risk-xgb-v1",
+  "modelType": "xgboost.XGBRegressor",
+  "xgboostVersion": "3.4.1",
+  "objective": "Continuous route-risk score, 0-100 (regression).",
+  "features": [
+    "rainfall1h",
+    "rainfall3h",
+    "rainfall6h",
+    "rainfall24h",
+    "windSpeedKmh",
+    "roadCondition",
+    "terrainSlopeDeg",
+    "elevationM",
+    "historicalLandslides",
+    "historicalFloods",
+    "previousClosureFrequencyPct",
+    "trafficLevel"
+  ],
+  "featureEncoding": {
+    "roadCondition": {
+      "GOOD": 0,
+      "FAIR": 1,
+      "POOR": 2
+    },
+    "trafficLevel": "0 = low, 1 = medium, 2 = high (PROJECT_CONTRACT \u00a71); continuous on [0, 2] for route-level means"
+  },
+  "trainingRange": {
+    "rainfall1h": [
+      0.0,
+      25.0
+    ],
+    "rainfall3h": [
+      0.0,
+      60.0
+    ],
+    "rainfall6h": [
+      0.0,
+      95.0
+    ],
+    "rainfall24h": [
+      0.0,
+      150.0
+    ],
+    "windSpeedKmh": [
+      0.0,
+      70.0
+    ],
+    "roadCondition": [
+      0.0,
+      2.0
+    ],
+    "terrainSlopeDeg": [
+      0.0,
+      40.0
+    ],
+    "elevationM": [
+      0.0,
+      4200.0
+    ],
+    "historicalLandslides": [
+      0.0,
+      15.0
+    ],
+    "historicalFloods": [
+      0.0,
+      12.0
+    ],
+    "previousClosureFrequencyPct": [
+      0.0,
+      45.0
+    ],
+    "trafficLevel": [
+      0.0,
+      2.0
+    ]
+  },
+  "monotoneConstraints": {
+    "rainfall1h": 1,
+    "rainfall3h": 1,
+    "rainfall6h": 1,
+    "rainfall24h": 1,
+    "windSpeedKmh": 1,
+    "roadCondition": 1,
+    "terrainSlopeDeg": 1,
+    "elevationM": 1,
+    "historicalLandslides": 1,
+    "historicalFloods": 1,
+    "previousClosureFrequencyPct": 1,
+    "trafficLevel": 1
+  },
+  "hyperparameters": {
+    "objective": "reg:squarederror",
+    "n_estimators": 1500,
+    "learning_rate": 0.05,
+    "max_depth": 5,
+    "min_child_weight": 3,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "reg_lambda": 1.0,
+    "tree_method": "hist",
+    "random_state": 20241118,
+    "n_jobs": 1,
+    "early_stopping_rounds": 50,
+    "eval_metric": "rmse"
+  },
+  "bestIteration": 292,
+  "treesUsed": 293,
+  "dataset": {
+    "synthetic": true,
+    "statement": "This dataset is synthetic and intended for prototype/demo model development. It is not evidence of production accuracy.",
+    "rows": 12000,
+    "seed": 20241118,
+    "sha256": "5ac030607b369b4d9e4f3da2bfd7ea6a52e4727b53cc5cc54168c91dbbe96244",
+    "labelNoiseSd": 2.5,
+    "labelWeights": {
+      "weather": 0.3,
+      "road": 0.25,
+      "history": 0.2,
+      "terrain": 0.15,
+      "traffic": 0.1
+    }
+  },
+  "split": {
+    "seed": 7,
+    "train": 8400,
+    "validation": 1800,
+    "test": 1800,
+    "note": "Validation drives early stopping only. Test rows are never seen during fitting or model selection."
+  },
+  "metrics": {
+    "train": {
+      "mae": 1.9082,
+      "rmse": 2.3748,
+      "r2": 0.9688
+    },
+    "validation": {
+      "mae": 2.0924,
+      "rmse": 2.6055,
+      "r2": 0.962
+    },
+    "test": {
+      "mae": 2.0785,
+      "rmse": 2.6234,
+      "r2": 0.9612
+    }
+  },
+  "referencePoints": {
+    "predictTrainingMean_test": {
+      "mae": 10.9784,
+      "rmse": 13.3207,
+      "r2": -0.0011
+    },
+    "noiselessFormula_test": {
+      "mae": 1.9263,
+      "rmse": 2.4248,
+      "r2": 0.9668
+    },
+    "interpretation": "Test RMSE near the noiseless-formula RMSE means the model recovered nearly all learnable signal in a synthetic function the project wrote. It is not a measure of real-world accuracy."
+  },
+  "artifactSha256": "d3b3efd4833cb8f9a93420413fc2262a61e18a2c1ea4fcdf827ab85daceb37cd"
+}

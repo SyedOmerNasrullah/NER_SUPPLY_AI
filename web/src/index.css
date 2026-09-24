@@ -1,0 +1,75 @@
+@import './design/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* ---------------------------------------------------------------------
+     Controls. Declared once here rather than repeated as Tailwind strings in
+     every feature, so a button never drifts between two pages.
+     --------------------------------------------------------------------- */
+
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 rounded-control border
+      px-3 py-[7px] text-body font-medium transition-colors duration-150 ease-ui
+      disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  .btn-primary {
+    @apply border-brand-500 bg-brand-500 text-white shadow-[0_1px_2px_rgb(14_27_42/0.12)]
+      hover:border-brand-700 hover:bg-brand-700;
+  }
+
+  .btn-secondary {
+    @apply border-line bg-panel text-ink hover:border-ink-3/60 hover:bg-panel-alt;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-ink-2 hover:bg-ink/[0.05] hover:text-ink;
+  }
+
+  .btn-danger {
+    @apply border-risk-critical bg-risk-critical text-white hover:brightness-95;
+  }
+
+  /* On navy: the hero and TopBar need controls that read against a dark ground. */
+  .btn-on-navy {
+    @apply border-white/25 bg-white/10 text-white backdrop-blur-sm hover:border-white/40
+      hover:bg-white/20;
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-1 text-meta;
+  }
+
+  .field {
+    @apply w-full rounded-control border border-line bg-panel px-3 py-[7px] text-body text-ink
+      shadow-inset outline-none transition-colors duration-150 ease-ui
+      placeholder:text-ink-3 hover:border-ink-3/50
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
+  }
+
+  /* ---------------------------------------------------------------------
+     Type roles. A heading is a role, not a font-size guess at the call site.
+     --------------------------------------------------------------------- */
+
+  .t-label {
+    @apply text-label uppercase text-ink-3;
+  }
+
+  .t-meta {
+    @apply text-meta text-ink-3;
+  }
+
+  .t-metric {
+    @apply tnum text-metric text-ink;
+  }
+}
+
+@layer utilities {
+  /* Horizontal overflow is contained by the element that overflows, never the page. */
+  .overflow-x-pane {
+    @apply overflow-x-auto scroll-thin;
+  }
+}

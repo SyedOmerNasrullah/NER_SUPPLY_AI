@@ -1,0 +1,482 @@
+// NER-SupplyAI — Prisma schema
+//
+// PROJECT_CONTRACT.md section 1, carried over verbatim from the original backend, PLUS the
+// deltas that docs/CONTRACT_DELTAS.md classifies as "A. REQUIRED FOR BACKEND INTEGRATION".
+// Those are marked `// delta Dnn` below. Nothing else was changed: field names, types,
+// optionality and enum values are the contract's, because the frozen frontend is typed against
+// them and a rename here is a compile error there.
+//
+// Do not alter anything without editing the contract first (contract section 10).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  LOGISTICS_OFFICER
+  FIELD_OFFICER
+  DISTRICT_OFFICER
+}
+
+enum CargoPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum DeliveryStatus {
+  PENDING
+  IN_TRANSIT
+  AT_RISK
+  DELIVERED
+  FAILED
+}
+
+enum RoadCondition {
+  GOOD
+  FAIR
+  POOR
+}
+
+enum SegmentStatus {
+  OPEN
+  PARTIAL
+  BLOCKED
+}
+
+enum IncidentType {
+  LANDSLIDE
+  FLOOD
+  DEBRIS
+  DAMAGED_ROAD
+  BLOCKED_ROAD
+  NORMAL
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RecommendationType {
+  REROUTE
+  PRE_POSITION
+  ALERT
+  NONE
+}
+
+enum BlockageLevel {
+  NONE
+  PARTIAL
+  SEVERE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  phone        String? // required for Twilio alerts on FIELD_OFFICER/DISTRICT_OFFICER accounts
+  districtId   String?
+  // Duty state, shown by Field Operations. Added in Phase 4A: the frontend's `FieldOfficer`
+  // carries it and there is no separate officers table — an officer IS a user with role
+  // FIELD_OFFICER, which is why `GET /api/field-officers` is a filter and not a second store.
+  status       String   @default("ACTIVE") // "ACTIVE" | "OFFLINE"
+  createdAt    DateTime @default(now())
+
+  @@index([role])
+}
+
+model District {
+  id        String   @id @default(uuid())
+  name      String
+  state     String
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now())
+}
+
+model Warehouse {
+  id         String @id @default(uuid())
+  name       String
+  districtId String
+  lat        Float
+  lng        Float
+}
+
+model InventoryItem {
+  id                     String    @id @default(uuid())
+  ownerType              String // "DISTRICT" | "WAREHOUSE" — application-managed polymorphic ref, no Prisma relation
+  ownerId                String
+  itemType               String // "medicine" | "food" | "fuel"
+  currentStock           Int
+  dailyConsumption       Float
+  predictedStockoutHours Float? // null when dailyConsumption <= 0 (see section 6.4)
+  lastRestockedAt        DateTime?
+  updatedAt              DateTime  @updatedAt
+}
+
+// NEW (review #8): historical record of stockout crossings, since InventoryItem only holds current state.
+// Written whenever predictedStockoutHours crosses below the CRITICAL threshold (see 6.4) for a given item.
+model StockoutEvent {
+  id           String   @id @default(uuid())
+  districtId   String
+  itemType     String
+  hoursAtEvent Float
+  triggeredBy  String // "SIMULATE_RAIN" | "INCIDENT" | "SCHEDULED_CHECK"
+  createdAt    DateTime @default(now())
+}
+
+model Vehicle {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  driverName        String
+  driverPhone       String?
+  currentLat        Float
+  currentLng        Float
+  speedKmh          Float
+  expectedSpeedKmh  Float
+  status            String // "IDLE" | "IN_TRANSIT" | "STOPPED"
+  nearestPlace      String? // delta D6 — nearest seeded corridor town
+  currentDeliveryId String?
+  currentRouteId    String? // application-managed reference to Route.id (NOT a Prisma @relation,
+  // same pattern as InventoryItem's ownerId — see review #10) — and NOT a RouteSegment id
+  // Rolling speed window for GPS anomaly detection (review #34) — not persisted per-reading;
+  // keep the last 6 readings in an in-memory map keyed by vehicle id. See section 6.11.
+  updatedAt         DateTime @updatedAt
+}
+
+model RouteSegment {
+  id                          String        @id @default(uuid())
+  code                        String        @unique
+  name                        String
+  startLat                    Float
+  startLng                    Float
+  endLat                      Float
+  endLng                      Float
+  terrainSlopeDeg             Float
+  elevationM                  Float
+  roadCondition               RoadCondition
+  roadType                    String // "highway" | "state_road" | "rural"
+  distanceToRiverKm           Float
+  historicalLandslides        Int
+  historicalFloods            Int
+  previousClosureFrequencyPct Float
+  trafficLevel                Int // NEW (review #2) — 0=low, 1=medium, 2=high. Was referenced by the ML plan but missing from schema.
+  currentStatus               SegmentStatus @default(OPEN)
+  lastRiskScore               Int?
+  lastRiskFactors             Json? // RiskFactor[] — see section 6.6 for what this array means
+
+  // --- Phase 6B (delta D50) — route ownership -------------------------------------------
+  /// The route this segment belongs to. Exactly one: two routes that run over the same tarmac
+  /// still get their own segment rows, because their risk state must move independently. A
+  /// landslide on Route B's stretch may not silently re-score Route A.
+  /// Nullable only so the additive migration lands without a backfill step; the generator sets
+  /// it for every row and `scripts/verify.ts` checks that none is left null.
+  routeId                     String?
+  /// Position along its route, 1-based, so the segments read in driving order.
+  sequence                    Int?
+  /// The driven line for this leg, [[lat, lng], ...] — OpenRouteService geometry in API mode,
+  /// the deterministic schematic path in a demo-only database.
+  geometry                    Json?
+  /// Road distance of this leg in km, as driven rather than as the crow flies.
+  distanceKm                  Float?
+  /// "ORS_ROUTING" when the geometry came from OpenRouteService, "SYNTHETIC_ROUTE_GEOMETRY"
+  /// when it is the project's own deterministic line. Never labelled as the other.
+  geometryProvenance          String        @default("SYNTHETIC_ROUTE_GEOMETRY")
+
+  updatedAt                   DateTime      @updatedAt
+
+  @@index([routeId, sequence])
+}
+
+// NEW (review #68-71): a persisted candidate route, not an ephemeral API-only object.
+// Every candidate returned by POST /api/routes/candidates is written here immediately,
+// which is what lets Delivery.assignedRouteId and Vehicle.currentRouteId point to something
+// real, and lets the cascade answer "which routes pass through this segment?"
+model Route {
+  id            String    @id @default(uuid())
+  name          String // e.g. "Route A — NH-13" — generated at creation time (letter by rank + dominant roadType among its segments), see section 6.7
+  originLat     Float
+  originLng     Float
+  destLat       Float
+  destLng       Float
+  distanceKm    Float
+  etaMinutes    Int
+  geometry      Json // [[lat, lng], ...] — app-internal order, see section 6.2
+  segmentIds    String[] // ordered RouteSegment ids this candidate passes within tolerance (section 6.7)
+  riskScore     Int
+  riskLevel     RiskLevel
+  isRecommended Boolean   @default(false)
+  // delta D8 (RESOLVED) — every candidate the operator can select carries its own factor
+  // breakdown, not just the recommended one. Route Intelligence lets you select A, B or C and
+  // ask "why is this risky?"; a contract where only the winner is explainable would make two
+  // of the three selections dead ends.
+  topFactors      Json? // RiskFactor[]
+  explanationText String?
+  // --- Phase 6B (delta D50) ---------------------------------------------------------------
+  /// "ORS_ROUTING" or "SYNTHETIC_ROUTE_GEOMETRY". What drew the line in `geometry`.
+  geometryProvenance String     @default("SYNTHETIC_ROUTE_GEOMETRY")
+  /// Road distance and driving time as OpenRouteService measured them. Kept beside the
+  /// product's own `distanceKm`/`etaMinutes` rather than overwriting them: those two carry the
+  /// frozen demonstration's figures, and the runbook quotes them.
+  orsDistanceKm   Float?
+  orsDurationMin  Int?
+  /// When the geometry was last generated. Null for the seeded schematic line.
+  geometryUpdatedAt DateTime?
+  // delta D12 / D13 — optional route-level rollups. Nullable: absent is a legal state and the
+  // UI already renders without them.
+  profile         Json?
+  elevationProfile Json?
+  createdAt     DateTime  @default(now())
+}
+
+model Delivery {
+  id                   String         @id @default(uuid())
+  code                 String         @unique
+  cargoType            String
+  priority             CargoPriority
+  originLat            Float
+  originLng            Float
+  destLat              Float
+  destLng              Float
+  originName           String? // delta D5 — the corridor town, resolved server-side
+  destName             String? // delta D5
+  cargoUnits           Int? // delta D15
+  destDistrictId       String? // delta D15 — what joins a delivery to a supply line
+  assignedVehicleId    String?
+  assignedRouteId      String? // application-managed reference to Route.id (NOT a Prisma @relation
+  // — same app-managed pattern as InventoryItem's ownerId, review #10). Set by
+  // POST /api/routes/candidates when deliveryId is supplied — see section 4.
+  requiredEta          DateTime
+  currentEta           DateTime
+  failureProbability   Float?
+  expectedDelayMinutes Int?
+  status               DeliveryStatus @default(PENDING)
+  createdAt            DateTime       @default(now())
+}
+
+model Incident {
+  id                  String         @id @default(uuid())
+  reporterId          String
+  segmentId           String? // resolved by nearest-segment lookup if not supplied — see section 6.7
+  type                IncidentType // reporter-selected, NEVER overwritten by AI (review #43)
+  severity            Severity
+  description         String?
+  imageUrl            String? // NOT persisted for MVP — see section 6.8. Stays null.
+  cvDetectedClass     String? // AI-detected, kept separate from `type`
+  cvConfidence        Float?
+  cvEstimatedBlockage BlockageLevel?
+  lat                 Float
+  lng                 Float
+  /// True for rows a demonstration created — a filed incident, a cascade alert, a generated
+  /// recommendation. `POST /api/demo/reset` deletes exactly these and leaves everything else
+  /// alone, which is the line between resetting a demo and deleting operational history.
+  /// Seeded rows are false and survive every reset.
+  demoGenerated       Boolean  @default(false)
+  createdAt           DateTime       @default(now())
+}
+
+model RiskPrediction {
+  id                  String    @id @default(uuid())
+  // Phase 5A: nullable, because a prediction now targets EITHER a segment or a route (see
+  // entityType). Non-destructive — every existing row keeps its segmentId.
+  segmentId           String?
+  riskScore           Int
+  riskProbability     Float
+  riskLevel           RiskLevel
+  predictedDisruption Boolean
+  topFactors          Json // RiskFactor[] — { factor: string, contributionPct: number }[], see 6.6
+  explanationText     String
+  modelVersion        String // e.g. "route-risk-xgb-v1", never a bare "1.0" (review #77)
+
+  // --- Phase 5A (delta D32) --------------------------------------------------------------
+  /// "SEGMENT" | "ROUTE". Existing rows are segment predictions, hence the default.
+  entityType          String    @default("SEGMENT")
+  /// Set when entityType = "ROUTE". Application-managed reference, like assignedRouteId.
+  routeId             String?
+  /// Set when entityType = "DELIVERY" (Phase 6B). Application-managed reference, like routeId.
+  /// A delivery prediction carries two numbers rather than one, so `riskScore` holds the failure
+  /// probability as an integer percentage and every row on this table stays comparable on one
+  /// 0-100 scale, while the minutes live in `predictedDelayMinutes`.
+  deliveryId          String?
+  /// Set when entityType = "DELIVERY": minutes late the delay model predicted. Null on segment
+  /// and route rows, which do not predict a duration.
+  predictedDelayMinutes Int?
+  /// "DETERMINISTIC_DEMO" — a seeded or replayed demo score, no model involved.
+  /// "ML_PREDICTION"      — produced by the internal ML service from featureValues.
+  /// Kept on the row so a demo score can never be mistaken for a model output later.
+  provenance          String    @default("DETERMINISTIC_DEMO")
+  /// "baseline" | "heavy_rain" — the world state the prediction was made under, so the
+  /// demo-vs-ML comparison pairs like with like.
+  scenario            String?
+  /// The exact inputs the model received. Without them a stored score cannot be reproduced
+  /// or audited.
+  featureValues       Json?
+  /// SHAP expected value: riskScore ≈ shapBaseValue + Σ topFactors[].shapValue (+ the rest).
+  shapBaseValue       Float?
+
+  createdAt           DateTime  @default(now())
+
+  @@index([entityType, provenance, createdAt])
+}
+
+// NOTE: this table is an append-only historical log, not current state (review #38).
+// Every simulate-rain run and every incident-triggered recalculation adds a new row.
+// lastRiskScore/lastRiskFactors on RouteSegment hold current state; this table is history for Analytics.
+
+model AIRecommendation {
+  id                 String             @id @default(uuid())
+  type               RecommendationType
+  targetType         String // "DELIVERY" | "DISTRICT" | "ROUTE"
+  targetId           String
+  recommendationText String
+  confidence         Float // 0-1 always — frontend multiplies by 100 for display, never sent pre-formatted
+  status             String             @default("PENDING") // "PENDING" | "ACTED" | "DISMISSED"
+  /// True for rows a demonstration created — a filed incident, a cascade alert, a generated
+  /// recommendation. `POST /api/demo/reset` deletes exactly these and leaves everything else
+  /// alone, which is the line between resetting a demo and deleting operational history.
+  /// Seeded rows are false and survive every reset.
+  demoGenerated      Boolean  @default(false)
+  createdAt          DateTime           @default(now())
+}
+
+model Alert {
+  id                String   @id @default(uuid())
+  severity          Severity
+  title             String
+  message           String
+  relatedType       String? // "DELIVERY" | "ROUTE" | "DISTRICT" | "INCIDENT"
+  relatedId         String?
+  notifiedViaTwilio Boolean  @default(false) // true if AT LEAST ONE Twilio channel (SMS or Voice) succeeded
+  twilioSid         String? // SID of the SMS message, if sent
+  smsStatus         String   @default("NOT_ATTEMPTED") // "SENT" | "FAILED" | "NOT_ATTEMPTED" (review: voice call addition)
+  callStatus        String   @default("NOT_ATTEMPTED") // "SENT" | "FAILED" | "NOT_ATTEMPTED" — only ever attempted for CRITICAL severity
+  twilioCallSid     String? // SID of the voice call, if placed
+  /// True for rows a demonstration created — a filed incident, a cascade alert, a generated
+  /// recommendation. `POST /api/demo/reset` deletes exactly these and leaves everything else
+  /// alone, which is the line between resetting a demo and deleting operational history.
+  /// Seeded rows are false and survive every reset.
+  demoGenerated     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+}
+
+// Dedup rule (review #36): before creating an alert, check for an existing alert with the
+// same relatedType + relatedId + severity created in the last 10 minutes. If found, skip
+// creating a new one rather than spamming duplicates from repeated cascade runs. This dedup
+// gates the entire notification action for that alert — since no new Alert row means no new
+// notification attempt, it prevents duplicate SMS AND duplicate voice calls alike, not just SMS
+// (voice call addition — see 6.10).
+
+model WeatherSnapshot {
+  id           String   @id @default(uuid())
+  segmentId    String
+  rainfall1h   Float
+  rainfall3h   Float
+  rainfall6h   Float
+  rainfall24h  Float
+  windSpeedKmh Float
+  visibility   String // "good" | "moderate" | "low"
+  isSimulated  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+// No external weather API for MVP (review #32). Rows are seeded, and mutated only by
+// POST /api/demo/simulate-rain. Do not add a real weather API integration.
+
+// ---------------------------------------------------------------------------
+// Models added in Phase 4A for deltas the contract did not yet cover
+// ---------------------------------------------------------------------------
+
+/// delta D11 — `GET /api/movements`.
+///
+/// The Command Center's movements feed is a *log*, not current state: Vehicle holds where a
+/// truck is now, this holds the reports it filed getting there. Kept separate for the same
+/// reason RiskPrediction is separate from RouteSegment.lastRiskScore.
+model VehicleMovement {
+  id           String   @id @default(uuid())
+  vehicleId    String
+  vehicleCode  String
+  deliveryId   String?
+  deliveryCode String
+  place        String // nearest seeded corridor town (delta D6's resolution, applied per report)
+  status       String // "ON_ROUTE" | "DELAYED" | "STOPPED"
+  delayMinutes Int? // absent when running to plan — never 0 standing in for "on time"
+  lat          Float
+  lng          Float
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// delta D16 — `GET /api/notifications`.
+///
+/// One row per dispatch attempt, so the UI can report what was actually sent instead of
+/// inferring it from Alert.notifiedViaTwilio. Twilio is not wired until a later phase; until
+/// then rows are seeded with channel DASHBOARD and no provider ever runs.
+model Notification {
+  id             String   @id @default(uuid())
+  alertId        String
+  alertTitle     String
+  channel        String // "SMS" | "CALL" | "DASHBOARD"
+  status         String // "QUEUED" | "SENT" | "DELIVERED" | "FAILED"
+  recipientId    String?
+  recipientName  String
+  recipientRole  Role
+  recipientPhone String?
+  failureReason  String? // present only when a provider rejected the send
+  relatedId      String?
+  /// True for rows a demonstration created — a filed incident, a cascade alert, a generated
+  /// recommendation. `POST /api/demo/reset` deletes exactly these and leaves everything else
+  /// alone, which is the line between resetting a demo and deleting operational history.
+  /// Seeded rows are false and survive every reset.
+  demoGenerated  Boolean  @default(false)
+  sentAt         DateTime @default(now())
+
+  @@index([sentAt])
+}
+
+/// delta D20 — `AnalyticsSummaryResponse.history`.
+///
+/// One row per recorded day. An aggregation table rather than a live query over
+/// RiskPrediction: the series is "what actually happened", and recomputing it from a log that
+/// later phases keep appending to would make yesterday's chart change shape tomorrow.
+///
+/// Absent rows are meaningful — the UI renders "no history recorded" rather than an empty
+/// chart — so this table being empty is a legal state, not a broken one.
+model DailyPerformance {
+  date            DateTime @id @db.Date
+  successRatePct  Float
+  avgDelayMin     Int
+  deliveriesTotal Int
+  deliveriesLate  Int
+}
+
+/// Demo-world flag. One row, id "singleton".
+///
+/// The frontend's status rail and hero band need to know whether the corridor is showing seeded
+/// baseline conditions or a simulated event, and that is a property of the world rather than of
+/// any one record. WeatherSnapshot.isSimulated says it per segment; this says it once.
+model DemoState {
+  id          String   @id @default("singleton")
+  simulated   Boolean  @default(false)
+  seededAt    DateTime @default(now())
+  seedVersion String
+}

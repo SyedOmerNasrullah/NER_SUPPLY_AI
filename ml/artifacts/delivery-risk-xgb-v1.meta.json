@@ -1,0 +1,226 @@
+{
+  "modelVersion": "delivery-risk-xgb-v1",
+  "modelType": {
+    "delay": "xgboost.XGBRegressor",
+    "failure": "xgboost.XGBClassifier"
+  },
+  "xgboostVersion": "3.4.1",
+  "objective": "Two heads on one feature contract: predicted minutes late (regression, 0-1440) and probability the delivery misses its required window (binary classification).",
+  "features": [
+    "distanceRemainingKm",
+    "currentSpeedKmh",
+    "routeRiskScore",
+    "weatherSeverity",
+    "cargoPriority",
+    "hourOfDay",
+    "dayOfWeek"
+  ],
+  "featureEncoding": {
+    "weatherSeverity": {
+      "NORMAL": 0,
+      "MODERATE": 1,
+      "HEAVY": 2,
+      "SEVERE": 3
+    },
+    "cargoPriority": {
+      "LOW": 0,
+      "MEDIUM": 1,
+      "HIGH": 2,
+      "CRITICAL": 3
+    },
+    "hourOfDay": "0-23, local time at the point of prediction",
+    "dayOfWeek": "0 = Monday ... 6 = Sunday"
+  },
+  "trainingRange": {
+    "distanceRemainingKm": [
+      0.0,
+      600.0
+    ],
+    "currentSpeedKmh": [
+      0.0,
+      80.0
+    ],
+    "routeRiskScore": [
+      0.0,
+      100.0
+    ],
+    "weatherSeverity": [
+      0.0,
+      3.0
+    ],
+    "cargoPriority": [
+      0.0,
+      3.0
+    ],
+    "hourOfDay": [
+      0.0,
+      23.0
+    ],
+    "dayOfWeek": [
+      0.0,
+      6.0
+    ]
+  },
+  "monotoneConstraints": {
+    "delay": {
+      "distanceRemainingKm": 1,
+      "currentSpeedKmh": -1,
+      "routeRiskScore": 1,
+      "weatherSeverity": 1,
+      "cargoPriority": 0,
+      "hourOfDay": 0,
+      "dayOfWeek": 0
+    },
+    "failure": {
+      "distanceRemainingKm": 1,
+      "currentSpeedKmh": -1,
+      "routeRiskScore": 1,
+      "weatherSeverity": 1,
+      "cargoPriority": 1,
+      "hourOfDay": 0,
+      "dayOfWeek": 0
+    }
+  },
+  "hyperparameters": {
+    "delay": {
+      "n_estimators": 1500,
+      "learning_rate": 0.05,
+      "max_depth": 5,
+      "min_child_weight": 3,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "reg_lambda": 1.0,
+      "tree_method": "hist",
+      "random_state": 20241118,
+      "n_jobs": 1,
+      "early_stopping_rounds": 50,
+      "objective": "reg:squarederror",
+      "eval_metric": "rmse"
+    },
+    "failure": {
+      "n_estimators": 1500,
+      "learning_rate": 0.05,
+      "max_depth": 5,
+      "min_child_weight": 3,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "reg_lambda": 1.0,
+      "tree_method": "hist",
+      "random_state": 20241118,
+      "n_jobs": 1,
+      "early_stopping_rounds": 50,
+      "objective": "binary:logistic",
+      "eval_metric": "logloss"
+    }
+  },
+  "bestIteration": {
+    "delay": 169,
+    "failure": 317
+  },
+  "treesUsed": {
+    "delay": 170,
+    "failure": 318
+  },
+  "dataset": {
+    "synthetic": true,
+    "statement": "This dataset is synthetic and intended for prototype/demo model development. It is not evidence of production accuracy.",
+    "rows": 14000,
+    "seed": 20241118,
+    "sha256": "3e8ded97b1400514f4f6b3b39f4c3f64c5fae09329a0675b9b9c03b90df15c5f",
+    "delayNoiseSd": 8.0,
+    "maxDelayMinutes": 1440.0,
+    "failureRate": 0.3851,
+    "prioritySlackMinutes": [
+      360.0,
+      240.0,
+      150.0,
+      90.0
+    ]
+  },
+  "split": {
+    "seed": 7,
+    "train": 9800,
+    "validation": 2100,
+    "test": 2100,
+    "note": "Validation drives early stopping only. Test rows are never seen during fitting or model selection."
+  },
+  "metrics": {
+    "delay": {
+      "train": {
+        "mae": 25.5898,
+        "rmse": 55.3061,
+        "r2": 0.9662
+      },
+      "validation": {
+        "mae": 30.2744,
+        "rmse": 67.9312,
+        "r2": 0.9501
+      },
+      "test": {
+        "mae": 29.8239,
+        "rmse": 66.2959,
+        "r2": 0.9567
+      }
+    },
+    "failure": {
+      "train": {
+        "accuracy": 0.913,
+        "precision": 0.9047,
+        "recall": 0.8646,
+        "f1": 0.8842,
+        "rocAuc": 0.9694,
+        "averagePrecision": 0.9607,
+        "logLoss": 0.2177,
+        "brier": 0.0651
+      },
+      "validation": {
+        "accuracy": 0.9038,
+        "precision": 0.8722,
+        "recall": 0.8722,
+        "f1": 0.8722,
+        "rocAuc": 0.9615,
+        "averagePrecision": 0.95,
+        "logLoss": 0.2385,
+        "brier": 0.0719
+      },
+      "test": {
+        "accuracy": 0.8895,
+        "precision": 0.8928,
+        "recall": 0.8199,
+        "f1": 0.8548,
+        "rocAuc": 0.9595,
+        "averagePrecision": 0.9476,
+        "logLoss": 0.2478,
+        "brier": 0.0769
+      }
+    }
+  },
+  "referencePoints": {
+    "delay_predictTrainingMean_test": {
+      "mae": 220.5725,
+      "rmse": 319.0208,
+      "r2": -0.0017
+    },
+    "delay_noiselessFormula_test": {
+      "mae": 5.9754,
+      "rmse": 7.6263,
+      "r2": 0.9994
+    },
+    "failure_majorityClassRate_train": 0.6155,
+    "failure_trueProbability_test": {
+      "accuracy": 0.8976,
+      "precision": 0.8992,
+      "recall": 0.8355,
+      "f1": 0.8662,
+      "rocAuc": 0.9665,
+      "averagePrecision": 0.9562,
+      "logLoss": 0.2263,
+      "brier": 0.0704
+    },
+    "interpretation": "Scores close to the noiseless-formula (delay) and true-probability (failure) references mean the models recovered nearly all learnable signal in a synthetic function this project wrote. That is not a measure of real-world accuracy."
+  },
+  "artifactSha256": {
+    "delay": "721bd1de64acdf63efd66a5ee9927ef40bbceb092424d17d98e62e3f1b8f1a82",
+    "failure": "ebb8df8ac5f2a63f5e86874629998a4988715dbbce92558be060f8c9a4bc14cc"
+  }
+}
