@@ -30,7 +30,8 @@ import {
 import { formatAge, formatDuration, formatStockout, formatTime, humanizeEnum } from '@/domain/format';
 import { RISK_TONE, riskLevelForScore, severityAsRiskLevel } from '@/domain/thresholds';
 import type { Incident } from '@/domain/types';
-import { MAX_SEGMENT_DISTANCE_KM } from '@/domain/geo';
+import { MAX_SEGMENT_DISTANCE_KM, localFocus, pathNearPointKm } from '@/domain/geo';
+import type { LatLng } from '@/domain/geo';
 import {
   Async,
   Button,
@@ -60,6 +61,21 @@ import { ReportIncidentButton, useIncidentReport } from '../shared/ReportInciden
 import { IncidentClassification } from './IncidentClassification';
 
 const ROUTE_KEYS = ['a', 'b', 'c'] as const;
+
+/**
+ * The narrowest the Route Impact map may frame, across the view.
+ *
+ * Wide enough that the incident is read in context — the road, the valley it sits in, the town
+ * the segment is named after — and not so wide that the corridor takes over. Twelve kilometres
+ * against a 450 km corridor is the difference between "where is it" and "there it is".
+ */
+const MIN_FOCUS_SPAN_KM = 12;
+
+/**
+ * How much of a route's line to keep in view around an incident that matched the route but no
+ * segment. Roughly a segment's worth of road either side, so the corridor reads as a corridor.
+ */
+const ROUTE_CONTEXT_RADIUS_KM = 12;
 
 export function IncidentCenter() {
   const navigate = useNavigate();
@@ -289,6 +305,36 @@ export function IncidentCenter() {
     return steps.map((s) => ({ ...s, target: reachableTarget(role, s.target) }));
   }, [selected, segment, assigned, delivery, district, detail.data, role]);
 
+  /**
+   * The candidate route this incident affects, and how we know — delta D52.
+   *
+   * Two associations exist, and they are not the same question. They stay separate here because
+   * they answer differently and the UI says which one spoke:
+   *
+   *   1. `routeImpact` — the backend matched the reported point to a candidate's line within
+   *      `MAX_ROUTE_DISTANCE_KM` (delta D49). It is the only one that can answer for a point
+   *      that matched no segment at all, and it carries its own off-the-line distance.
+   *   2. the route that carries the matched segment — if a segment scored, the route travelling
+   *      it is affected by definition. `segmentIds` is the existing association (delta D39),
+   *      computed by `routeSegmentIds`; reading it is a lookup, not a new rule.
+   *
+   * The second matters because only the first is populated for freshly reported incidents. The
+   * seeded ones carry a segment and no `routeImpact`, so the panel used to announce "No corridor
+   * affected" over an incident sitting on SEG-013, which Route A travels.
+   *
+   * Undefined still means what it always meant: off every corridor.
+   */
+  const affectedRoute = useMemo(() => {
+    if (!selected) return undefined;
+    if (selected.routeImpact) {
+      return routeList.find((r) => r.id === selected.routeImpact!.routeId);
+    }
+    if (selected.segmentId) {
+      return routeList.find((r) => r.segmentIds?.includes(selected.segmentId!));
+    }
+    return undefined;
+  }, [selected, routeList]);
+
   // --- Map ------------------------------------------------------------------
   const mapRoutes = useMemo<MapRoute[]>(
     () =>
@@ -301,13 +347,56 @@ export function IncidentCenter() {
         etaMinutes: c.etaMinutes,
         recommended: c.isRecommended,
         // The route this incident sits on — not the delivery's assigned route, which made every
-        // incident look like it happened on Route A. Falls back to the assigned route only when
-        // the incident is off every corridor and there is nothing of its own to highlight.
-        selected: c.id === (selected?.routeImpact?.routeId ?? assigned?.id),
+        // incident look like it happened on Route A.
+        //
+        // No fallback. An incident off every corridor highlights nothing: the header says "No
+        // corridor affected", and lighting up the assigned route underneath that sentence
+        // asserted the opposite. Nothing selected means the map makes no claim.
+        selected: c.id === affectedRoute?.id,
         showCallout: true,
       })),
-    [routeList, assigned, selected],
+    [routeList, affectedRoute],
   );
+
+  /**
+   * What the Route Impact map frames — delta D52.
+   *
+   * This panel answers "what is happening here", and it used to answer it at `fitMaxZoom={9}`.
+   * The corridor's bounding box is only about 110 km by 160 km, so a zoom-9 ceiling frames
+   * essentially the whole Guwahati → Tawang corridor whatever it is handed: the incident became
+   * a speck somewhere along three route ribbons, and a judge had to search the map to find it.
+   *
+   * The three cases below are ordered by how much the data actually knows, and each one says
+   * something different. None of them widens to the full corridor.
+   */
+  const focus = useMemo<LatLng[]>(() => {
+    if (!selected) return [];
+    const at: LatLng = [selected.lat, selected.lng];
+
+    // A — the incident matched a scored segment. Frame the incident with that segment's extent,
+    // because the segment is the thing the cascade degraded.
+    if (segment) {
+      return localFocus(
+        at,
+        [
+          [segment.startLat, segment.startLng],
+          [segment.endLat, segment.endLng],
+        ],
+        MIN_FOCUS_SPAN_KM,
+      );
+    }
+
+    // B — no segment, but the point is on a candidate corridor. Frame the stretch of that
+    // route's own line running past the incident. Real ORS geometry in API mode, the demo
+    // line in demo mode; either way its own vertices, and no claim that a segment was scored.
+    if (affectedRoute) {
+      const nearby = pathNearPointKm(affectedRoute.geometry, at, ROUTE_CONTEXT_RADIUS_KM);
+      if (nearby.length > 0) return localFocus(at, nearby, MIN_FOCUS_SPAN_KM);
+    }
+
+    // C — off every corridor. Centre on where it was reported and show nothing else.
+    return localFocus(at, [], MIN_FOCUS_SPAN_KM);
+  }, [selected, segment, affectedRoute]);
 
   const riskZones = useMemo<MapRiskZone[]>(() => {
     if (!selected) return [];
@@ -578,6 +667,16 @@ export function IncidentCenter() {
                         {selected.routeImpact.name} · {selected.routeImpact.riskScore}%
                         <span className="text-ink-3"> · {selected.routeImpact.distanceKm} km off the line</span>
                       </span>
+                    ) : affectedRoute ? (
+                      // Derived from the matched segment rather than from a line match, so it
+                      // says what it knows: which route carries the segment, not how far off
+                      // the line the report was.
+                      <span className={RISK_TONE[riskLevelForScore(affectedRoute.riskScore)].text}>
+                        {shortRouteName(affectedRoute.name)} · {affectedRoute.riskScore}%
+                        {selected.segmentName ? (
+                          <span className="text-ink-3"> · carries {selected.segmentName}</span>
+                        ) : null}
+                      </span>
                     ) : (
                       <span className="text-ink-3">No corridor affected</span>
                     )
@@ -610,20 +709,20 @@ export function IncidentCenter() {
               subtitle={
                 selected?.routeImpact
                   ? `${selected.routeImpact.name} · risk ${selected.routeImpact.riskScore}%`
-                  : selected
-                    ? 'No corridor affected — outside every candidate route'
-                    : 'Affected corridor'
+                  : affectedRoute
+                    ? `${shortRouteName(affectedRoute.name)} · risk ${affectedRoute.riskScore}%`
+                    : selected
+                      ? 'No corridor affected — outside every candidate route'
+                      : 'Affected corridor'
               }
               icon="liveMap"
               actions={
-                selected?.routeImpact || assigned ? (
+                affectedRoute || assigned ? (
                   <Button
                     variant="ghost"
                     size="sm"
                     iconRight="arrowRight"
-                    onClick={() =>
-                      navigate(`/routes?route=${selected?.routeImpact?.routeId ?? assigned!.id}`)
-                    }
+                    onClick={() => navigate(`/routes?route=${affectedRoute?.id ?? assigned!.id}`)}
                   >
                     Analyse
                   </Button>
@@ -644,22 +743,12 @@ export function IncidentCenter() {
               riskZones={riskZones}
               places={[]}
               layers={{ vehicles: false, facilities: false }}
-              // Frame the incident and the segment it sits on, not the whole corridor — this
-              // panel answers "what is happening here", and a corridor-scale fit makes the
-              // marker a speck.
-              fitTo={[
-                [selected.lat, selected.lng],
-                ...(segment
-                  ? ([
-                      [segment.startLat, segment.startLng],
-                      [segment.endLat, segment.endLng],
-                    ] as [number, number][])
-                  : []),
-              ]}
-              // Zoom 9 keeps the incident, its segment and the corridor around it in frame.
-              // Tighter than that and Esri's imagery over the high passes has no detail left to
-              // show — the panel fills with a blurred field instead of terrain.
-              fitMaxZoom={9}
+              // Local to the incident — see `focus` above for what each case frames.
+              fitTo={focus}
+              // The ceiling only bites on an incident with no route context at all, and
+              // `MIN_FOCUS_SPAN_KM` already stops the fit before it gets there. It stays as a
+              // guard so a degenerate extent cannot zoom into imagery that has no detail left.
+              fitMaxZoom={12}
               onSelectRoute={(r) => navigate(`/routes?route=${r.id}`)}
               showBasemapSwitch={false}
               showLegend

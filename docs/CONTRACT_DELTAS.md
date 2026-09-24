@@ -820,6 +820,29 @@ Segment matching is unchanged — same 5 km, same method, no widening — becaus
 The two answers are different questions: which scored segment does this sit on, and which corridor
 does it sit on.
 
+**D52 — Route Impact frames the incident, not the corridor (frontend-only).** The Incident Center's
+Route Impact map fitted to the incident plus its segment with a `fitMaxZoom` of 9. The corridor's
+bounding box is only about 110 km by 160 km, so a zoom-9 ceiling frames essentially the whole
+Guwahati -> Tawang run whatever it is handed: the marker became a speck along three route ribbons,
+and the panel stopped answering the question it exists to answer.
+
+The fit is now chosen from what the data actually knows, in order: the incident with its matched
+segment's extent; failing that, the incident with the stretch of the affected route's own line
+within 12 km of it; failing that, the incident alone. A 12 km minimum span stops a degenerate
+extent zooming into imagery that has no detail left. `localFocus` returns two padding corners to
+carry that minimum — viewport padding, never drawn and never described as geometry. `pathNearPointKm`
+returns vertices the route already has, so nothing is interpolated: real ORS geometry in API mode,
+the schematic demo line in demo mode.
+
+Two consequences beyond framing. The map no longer falls back to highlighting the delivery's
+assigned route when an incident matches no corridor — the header says "No corridor affected", and
+lighting up Route A underneath that asserted the opposite. And the affected corridor is now read
+from `routeImpact` where the backend supplied one, or else from the route whose `segmentIds` carry
+the matched segment (D39), because `routeImpact` is only computed for freshly reported incidents:
+seeded ones announced "No corridor affected" while sitting on SEG-013, which Route A travels. The
+two associations stay separate and the row says which one spoke — "0.4 km off the line" for a line
+match, "carries Dirang – Sela Pass" for a segment-owner match.
+
 ---
 
 ## Deferred to Phase 4 review

@@ -328,3 +328,55 @@ export function distanceToPathKm(point: LatLng, path: LatLng[]): number {
   }
   return best;
 }
+
+// ---------------------------------------------------------------------------
+// Framing a local view
+// ---------------------------------------------------------------------------
+
+/**
+ * The stretch of a route that runs past a point, as vertices already in its geometry.
+ *
+ * Used to frame a map on an incident without losing the road it happened on. Returns a
+ * contiguous window — every vertex within `radiusKm`, plus one either side so the line enters
+ * and leaves the frame rather than stopping dead at the radius — so the caller can fit to
+ * "the incident and the road around it" instead of the whole corridor.
+ *
+ * These are the route's own points, whatever produced them: real OpenRouteService geometry in
+ * API mode, the schematic demo line in demo mode. Nothing here interpolates or invents a
+ * coordinate. Empty when the route never comes within `radiusKm`, which is a real answer and
+ * the caller's cue to frame the incident alone.
+ */
+export function pathNearPointKm(path: LatLng[], point: LatLng, radiusKm: number): LatLng[] {
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < path.length; i += 1) {
+    if (haversineKm(path[i], point) <= radiusKm) {
+      if (first === -1) first = i;
+      last = i;
+    }
+  }
+  if (first === -1) return [];
+  return path.slice(Math.max(0, first - 1), Math.min(path.length, last + 2));
+}
+
+/**
+ * Points that frame `center` locally, with `context` kept in view and a floor on how tight the
+ * result can be.
+ *
+ * `fitBounds` on a single coordinate zooms to its ceiling, which over these passes is a blurred
+ * field with a marker in the middle; on an incident plus a short segment it can still land
+ * closer than the surrounding road is legible. The two corners returned here put a minimum span
+ * across the view so neither happens.
+ *
+ * The corners are viewport padding. They are never drawn, never stored, and never described as
+ * geometry — the only thing they do is widen a bounding box.
+ */
+export function localFocus(center: LatLng, context: LatLng[], minSpanKm: number): LatLng[] {
+  const halfLat = minSpanKm / 2 / 110.574;
+  const halfLng = minSpanKm / 2 / (Math.cos(toRad(center[0])) * 111.32);
+  return [
+    [center[0] - halfLat, center[1] - halfLng],
+    [center[0] + halfLat, center[1] + halfLng],
+    ...context,
+  ];
+}
