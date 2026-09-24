@@ -5,6 +5,9 @@ Predictive logistics intelligence for the North Eastern Region of India — SIH 
 It is not a navigation system. It predicts when an essential delivery is likely to fail,
 recommends what to do about it, and makes sure the right officer is actually told.
 
+**Live:** https://ner-supplyai.vercel.app — the console running on deterministic
+demonstration data. Sign in with any of the accounts listed on the page (password `demo123`).
+
 ```
 weather / incident ─► segment risk ─► route risk (ML) ─► delivery risk (ML)
                                                               │
@@ -88,6 +91,20 @@ cd api && npm run routes:apply       # no key needed: re-applies the committed a
 
 Nothing calls ORS on a page load. A machine with no key and no internet runs the whole product
 from the committed artifact, and the seed applies it automatically.
+
+### Deployment
+
+The frontend is deployed to Vercel from `web/`, built with `VITE_DATA_SOURCE=demo` so the live
+site is self-contained: no database, no ML service, no keys, and nothing to go stale between now
+and a presentation. `web/vercel.json` holds the build settings and the SPA rewrite.
+
+```bash
+cd web && npx vercel deploy --prod
+```
+
+The Express API and the FastAPI ML service are not on Vercel. The ML service carries XGBoost, SHAP
+and SciPy, which exceed the size limit for a Vercel Python function, so `http` mode needs a host
+that runs a long-lived container.
 
 ## Tests
 
