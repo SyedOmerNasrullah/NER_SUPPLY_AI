@@ -653,8 +653,33 @@ export interface SendSmsRequest {
   officerId: string;
   alertId: string;
 }
+
+/** A voice call carries the same two ids: the browser never names a number or writes the words. */
+export type PlaceCallRequest = SendSmsRequest;
+
+export interface PlaceCallResponse {
+  notification: NotificationRecord;
+  duplicate?: boolean;
+  call: {
+    /** Twilio's call SID. Absent when simulated. */
+    sid?: string;
+    providerStatus: string;
+    /** Masked destination, e.g. `+91••••••••74`. */
+    to: string;
+    redirected: boolean;
+    /** What the officer hears, composed server-side from the alert. */
+    script: string;
+    /** True in demo mode: nothing left the browser, no call was placed. */
+    simulated?: boolean;
+  };
+}
 export interface SendSmsResponse {
   notification: NotificationRecord;
+  /**
+   * True when the server recognised this as the same alert to the same officer on the same
+   * channel it already handled, and did NOT contact Twilio again. Nothing new was sent.
+   */
+  duplicate?: boolean;
   sms: {
     /** Twilio's message SID. Absent when simulated. */
     sid?: string;

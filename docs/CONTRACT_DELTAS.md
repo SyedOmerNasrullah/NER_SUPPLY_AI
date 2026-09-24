@@ -843,6 +843,49 @@ seeded ones announced "No corridor affected" while sitting on SEG-013, which Rou
 two associations stay separate and the row says which one spoke — "0.4 km off the line" for a line
 match, "carries Dirang – Sela Pass" for a segment-owner match.
 
+**D53 — Route Impact draws one route, clipped to the incident (frontend-only).** Framing the
+viewport locally (D52) was necessary and not sufficient. The panel was still handed all three
+candidates at their full length, so a 40 km window was a window onto three ribbons entering one
+edge and leaving the other, and it went on reading as the whole Guwahati -> Tawang corridor
+however tightly it was framed. The viewport said "here"; the geometry said "everywhere".
+
+The map now receives one `MapRoute`: the affected route, its geometry clipped by
+`pathNearPointKm` to 30 km either side of the incident. The draw radius is deliberately wider
+than anything the viewport frames, so the road leaves the frame on both sides and reads as a
+corridor continuing rather than a stub that begins and ends at the incident. Clipping selects
+vertices the route already has — ORS geometry in API mode, the demo line in demo mode — and
+interpolates nothing.
+
+An incident matching no corridor now draws no route at all, which is the only honest thing to
+draw beneath a header reading "No corridor affected". Measured on the seeded world: a route
+drawn over 20-41 km in place of the full 449 km, four SVG paths in place of ten, and one path
+(the risk circle alone) for an unmatched report.
+
+The on-map risk chip is off in this panel. It exists to tell candidate routes apart, there is
+only one route here, and on a window this tight its anchor either lands on the incident marker
+or clips against the frame edge. The panel header immediately above already reads
+"Route A · risk 21%".
+
+**D54 — Officer notification finishes the columns the schema already had (Phase 6D).** `Alert`
+has carried `notifiedViaTwilio`, `twilioSid`, `smsStatus`, `callStatus` and `twilioCallSid`
+since the Phase 4A baseline, and nothing had ever written them; `Notification.channel` has
+always documented `"CALL"` alongside `"SMS"`. Voice is therefore not a new concept here, it is
+the unfinished half of one — no migration, no new table, no new column.
+
+`POST /api/notifications/call` mirrors the SMS route exactly: same two ids in, same officer and
+phone lookup, same credentials, same four failure kinds, same QUEUED -> SENT/FAILED row. The
+script is spoken through inline TwiML in Twilio's `Twiml` parameter rather than a `Url` webhook,
+because a webhook would require this server to be reachable from the public internet before an
+officer could be called, which is not true of a laptop at a demonstration. Only two things are
+transformed rather than reported: the product name is spaced so a synthetic voice says
+"N E R Supply A I", and an en dash in a segment name is read as "to". Both are pronunciation.
+
+Both channels are idempotent for five minutes per (alert, officer, channel). A repeat returns
+200 with `duplicate: true` and the original row, having contacted nobody; only QUEUED and SENT
+rows count, so a FAILED attempt can be retried at once. This is what stops a double-click, a
+re-render or a client retry from ringing an officer twice.
+
+
 ---
 
 ## Deferred to Phase 4 review

@@ -53,6 +53,7 @@ import {
   Navigation,
   Package,
   Phone,
+  PhoneCall,
   Pill,
   Plus,
   RefreshCw,
@@ -133,6 +134,7 @@ export const ICONS = {
   live: Activity,
   alert: Bell,
   notify: Phone,
+  call: PhoneCall,
   up: TrendingUp,
   down: TrendingDown,
 

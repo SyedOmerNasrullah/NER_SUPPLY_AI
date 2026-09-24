@@ -29,6 +29,8 @@ import type {
   ExplainResponse,
   ResetDemoResponse,
   RouteComparisonResponse,
+  PlaceCallRequest,
+  PlaceCallResponse,
   SendSmsRequest,
   SendSmsResponse,
   RiskSegmentsResponse,
@@ -104,6 +106,7 @@ export interface DataSource {
   getNotifications(): Promise<NotificationsResponse>;
   /** SMS one officer about one alert (Phase 6A). Demo mode simulates; it never sends. */
   sendSms(body: SendSmsRequest): Promise<SendSmsResponse>;
+  placeCall(body: PlaceCallRequest): Promise<PlaceCallResponse>;
 
   // --- Intelligence (Phase 6C) --------------------------------------------
   /** Candidate risks, deltas against the assigned route, and the safer-route verdict. */

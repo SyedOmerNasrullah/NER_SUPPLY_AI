@@ -1,7 +1,8 @@
 /**
- * Twilio SMS — the only file in the project that talks to Twilio.
+ * Twilio SMS and voice — the only file in the project that talks to Twilio.
  *
- *   sendSms({ to, body })  ->  { sid, status }    or throws SmsError
+ *   sendSms({ to, body })       ->  { sid, status }    or throws TwilioError
+ *   placeCall({ to, message })  ->  { sid, status }    or throws TwilioError
  *
  * It calls Twilio's REST API directly (one form-encoded POST) rather than pulling in the SDK:
  * the SDK is a wrapper around exactly this request, and one `fetch` is easier to read, to time
@@ -24,15 +25,21 @@ export type SmsErrorKind =
   /** Twilio could not be reached, or did not answer in time. */
   | 'UNAVAILABLE';
 
-export class SmsError extends Error {
+export class TwilioError extends Error {
   readonly kind: SmsErrorKind;
 
   constructor(kind: SmsErrorKind, message: string) {
     super(message);
-    this.name = 'SmsError';
+    this.name = 'TwilioError';
     this.kind = kind;
   }
 }
+
+/**
+ * The name this was born with, kept because SMS callers and their tests use it and the two
+ * channels fail in exactly the same four ways. One class, one `instanceof`, both channels.
+ */
+export { TwilioError as SmsError };
 
 export interface SmsResult {
   /** Twilio's message SID, e.g. `SM…`. Not a secret. */
@@ -52,6 +59,12 @@ export interface TwilioCredentials {
 export type SmsTransport = (
   creds: TwilioCredentials,
   message: { to: string; body: string },
+) => Promise<SmsResult>;
+
+/** The same, for a voice call. Separate so a test can stub one channel and not the other. */
+export type CallTransport = (
+  creds: TwilioCredentials,
+  call: { to: string; message: string },
 ) => Promise<SmsResult>;
 
 // ---------------------------------------------------------------------------
@@ -75,11 +88,44 @@ export function maskPhone(e164: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Voice
+// ---------------------------------------------------------------------------
+
+/**
+ * The spoken script, as inline TwiML.
+ *
+ * Passed to Twilio in the `Twiml` parameter rather than served from a `Url` webhook: a webhook
+ * would mean this server had to be reachable from the public internet before an officer could be
+ * called, which is not true of a laptop at a demonstration and not a dependency worth adding.
+ *
+ * The alert is read twice with a pause between. Someone answering a phone misses the first
+ * seconds of it, and this is the channel used when the dashboard has not been looked at.
+ */
+export function twimlFor(message: string): string {
+  const escaped = message.replace(
+    /[<>&'"]/g,
+    (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c] ?? c,
+  );
+  const say = `<Say voice="alice" language="en-IN">${escaped}</Say>`;
+  return `<Response>${say}<Pause length="1"/>${say}</Response>`;
+}
+
+// ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
 
-const restTransport: SmsTransport = async (creds, { to, body }) => {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(creds.accountSid)}/Messages.json`;
+/**
+ * One form-encoded POST to a Twilio resource, and one reading of the answer.
+ *
+ * Messages and Calls differ only in the resource name and the fields posted, so they share this.
+ * Everything a caller is allowed to learn about a failure is decided here.
+ */
+async function postToTwilio(
+  creds: TwilioCredentials,
+  resource: 'Messages' | 'Calls',
+  params: Record<string, string>,
+): Promise<SmsResult> {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(creds.accountSid)}/${resource}.json`;
   const auth = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
 
   let res: Response;
@@ -90,12 +136,12 @@ const restTransport: SmsTransport = async (creds, { to, body }) => {
         Authorization: `Basic ${auth}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({ To: to, From: creds.fromNumber, Body: body }),
+      body: new URLSearchParams(params),
       signal: AbortSignal.timeout(creds.timeoutMs),
     });
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    throw new SmsError('UNAVAILABLE', timedOut ? 'Twilio did not respond in time.' : 'Twilio could not be reached.');
+    throw new TwilioError('UNAVAILABLE', timedOut ? 'Twilio did not respond in time.' : 'Twilio could not be reached.');
   }
 
   const payload = (await res.json().catch(() => ({}))) as {
@@ -107,20 +153,30 @@ const restTransport: SmsTransport = async (creds, { to, body }) => {
   if (!res.ok || !payload.sid) {
     // Twilio's error body is `{ code, message, more_info, status }` — about the request, never
     // the credentials. 401 is the exception worth rewording: it means the keys are wrong.
-    if (res.status === 401) throw new SmsError('NOT_CONFIGURED', 'Twilio rejected the account credentials.');
+    if (res.status === 401) throw new TwilioError('NOT_CONFIGURED', 'Twilio rejected the account credentials.');
     const code = payload.code ? ` (Twilio ${payload.code})` : '';
-    throw new SmsError('REJECTED', `${payload.message ?? `Twilio returned HTTP ${res.status}`}${code}`.slice(0, 300));
+    throw new TwilioError('REJECTED', `${payload.message ?? `Twilio returned HTTP ${res.status}`}${code}`.slice(0, 300));
   }
   return { sid: payload.sid, status: payload.status ?? 'queued' };
-};
+}
+
+const restTransport: SmsTransport = (creds, { to, body }) =>
+  postToTwilio(creds, 'Messages', { To: to, From: creds.fromNumber, Body: body });
+
+const restCallTransport: CallTransport = (creds, { to, message }) =>
+  postToTwilio(creds, 'Calls', { To: to, From: creds.fromNumber, Twiml: twimlFor(message) });
 
 let transport: SmsTransport = restTransport;
+let callTransport: CallTransport = restCallTransport;
 let credentialsOverride: TwilioCredentials | null | undefined;
 
-/** Tests only: replace the network call and/or the credentials. `undefined` restores the default. */
+/** Tests only: replace the network calls and/or the credentials. `undefined` restores the default. */
 export const smsTesting = {
   setTransport(t?: SmsTransport): void {
     transport = t ?? restTransport;
+  },
+  setCallTransport(t?: CallTransport): void {
+    callTransport = t ?? restCallTransport;
   },
   /** `null` simulates missing credentials; `undefined` goes back to the environment. */
   setCredentials(c?: TwilioCredentials | null): void {
@@ -137,13 +193,31 @@ function credentials(): TwilioCredentials | undefined {
 
 export const smsConfigured = (): boolean => credentials() !== undefined;
 
+/** Voice needs exactly the same three keys as SMS — the same account, the same caller ID. */
+export const callConfigured = (): boolean => credentials() !== undefined;
+
 // ---------------------------------------------------------------------------
 
 export async function sendSms({ to, body }: { to: string; body: string }): Promise<SmsResult> {
   const creds = credentials();
-  if (!creds) throw new SmsError('NOT_CONFIGURED', 'SMS is not configured on this server.');
+  if (!creds) throw new TwilioError('NOT_CONFIGURED', 'SMS is not configured on this server.');
   const destination = normalizePhone(to);
-  if (!destination) throw new SmsError('INVALID_NUMBER', 'The destination is not a valid phone number.');
-  if (!body.trim()) throw new SmsError('REJECTED', 'An SMS needs a message.');
+  if (!destination) throw new TwilioError('INVALID_NUMBER', 'The destination is not a valid phone number.');
+  if (!body.trim()) throw new TwilioError('REJECTED', 'An SMS needs a message.');
   return transport(creds, { to: destination, body });
+}
+
+/**
+ * Ring an officer and read them a short operational alert.
+ *
+ * Same guards, same order and the same four failure kinds as `sendSms`, so a caller handles one
+ * shape of error whichever channel it used. The returned sid is a call sid (`CA…`).
+ */
+export async function placeCall({ to, message }: { to: string; message: string }): Promise<SmsResult> {
+  const creds = credentials();
+  if (!creds) throw new TwilioError('NOT_CONFIGURED', 'Voice calling is not configured on this server.');
+  const destination = normalizePhone(to);
+  if (!destination) throw new TwilioError('INVALID_NUMBER', 'The destination is not a valid phone number.');
+  if (!message.trim()) throw new TwilioError('REJECTED', 'A call needs something to say.');
+  return callTransport(creds, { to: destination, message });
 }

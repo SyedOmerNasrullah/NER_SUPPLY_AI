@@ -31,6 +31,8 @@ import type {
   ExplainResponse,
   NotificationsResponse,
   RouteComparisonResponse,
+  PlaceCallRequest,
+  PlaceCallResponse,
   SendSmsRequest,
   SendSmsResponse,
   ResetDemoResponse,
@@ -164,6 +166,8 @@ export const httpSource: DataSource = {
   getNotifications: () => request<NotificationsResponse>(() => http.get('/api/notifications')),
   sendSms: (body: SendSmsRequest) =>
     request<SendSmsResponse>(() => http.post('/api/notifications/sms', body, { timeout: 30_000 })),
+  placeCall: (body: PlaceCallRequest) =>
+    request<PlaceCallResponse>(() => http.post('/api/notifications/call', body, { timeout: 30_000 })),
 
   getRouteComparison: (deliveryId?: string) =>
     request<RouteComparisonResponse>(() =>

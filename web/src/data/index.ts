@@ -64,6 +64,11 @@ export const dataSource: DataSource = {
     invalidateRequestCache();
     return result;
   },
+  placeCall: async (body) => {
+    const result = await selected.placeCall(body);
+    invalidateRequestCache();
+    return result;
+  },
   resetDemo: async () => {
     const result = await selected.resetDemo();
     invalidateRequestCache();

@@ -77,6 +77,15 @@ const MIN_FOCUS_SPAN_KM = 12;
  */
 const ROUTE_CONTEXT_RADIUS_KM = 12;
 
+/**
+ * How much of the affected route is drawn around the incident.
+ *
+ * Wider than anything the viewport will frame, on purpose: the road should run off both edges so
+ * it reads as a corridor continuing past the incident, not as a line that begins and ends there.
+ * Wide enough for that, and nowhere near wide enough to redraw the corridor.
+ */
+const ROUTE_DRAW_RADIUS_KM = 30;
+
 export function IncidentCenter() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -335,28 +344,51 @@ export function IncidentCenter() {
     return undefined;
   }, [selected, routeList]);
 
-  // --- Map ------------------------------------------------------------------
-  const mapRoutes = useMemo<MapRoute[]>(
-    () =>
-      routeList.map((c, i) => ({
-        id: c.id,
-        key: ROUTE_KEYS[i] ?? 'c',
-        name: shortRouteName(c.name),
-        geometry: c.geometry,
-        riskScore: c.riskScore,
-        etaMinutes: c.etaMinutes,
-        recommended: c.isRecommended,
-        // The route this incident sits on — not the delivery's assigned route, which made every
-        // incident look like it happened on Route A.
-        //
-        // No fallback. An incident off every corridor highlights nothing: the header says "No
-        // corridor affected", and lighting up the assigned route underneath that sentence
-        // asserted the opposite. Nothing selected means the map makes no claim.
-        selected: c.id === affectedRoute?.id,
-        showCallout: true,
-      })),
-    [routeList, affectedRoute],
-  );
+  /**
+   * What the Route Impact map draws — delta D53.
+   *
+   * One route, and only the stretch of it that runs past this incident.
+   *
+   * Fitting the viewport locally was not enough on its own. This panel was still handed all three
+   * candidates at full length, so a 40 km window became a window onto three ribbons entering one
+   * edge and leaving the other, and the panel went on reading as the Guwahati → Tawang corridor
+   * however tightly it was framed. The viewport said "here"; the geometry said "everywhere".
+   *
+   * So the geometry is clipped to the same question the viewport asks. `pathNearPointKm` returns
+   * vertices the route already has — ORS geometry in API mode, the demo line in demo mode — never
+   * an interpolated point, and the draw radius is wider than the fit so the road still leaves the
+   * frame on both sides and reads as a road rather than a stub.
+   *
+   * Empty when nothing is affected. An incident off every corridor draws no route at all, which
+   * is the only honest thing to draw under a header that says "No corridor affected".
+   */
+  const mapRoutes = useMemo<MapRoute[]>(() => {
+    if (!selected || !affectedRoute) return [];
+    const index = routeList.findIndex((r) => r.id === affectedRoute.id);
+    const local = pathNearPointKm(
+      affectedRoute.geometry,
+      [selected.lat, selected.lng],
+      ROUTE_DRAW_RADIUS_KM,
+    );
+    if (local.length < 2) return [];
+    return [
+      {
+        id: affectedRoute.id,
+        key: ROUTE_KEYS[index] ?? 'a',
+        name: shortRouteName(affectedRoute.name),
+        geometry: local,
+        riskScore: affectedRoute.riskScore,
+        etaMinutes: affectedRoute.etaMinutes,
+        recommended: affectedRoute.isRecommended,
+        selected: true,
+        // No on-map chip. It exists to tell candidate routes apart, and there is only one route
+        // here; on a window this tight its anchor either lands on the incident marker or clips
+        // against the frame edge. The panel header immediately above already reads
+        // "Route A · risk 21%", so nothing is lost.
+        showCallout: false,
+      },
+    ];
+  }, [selected, affectedRoute, routeList]);
 
   /**
    * What the Route Impact map frames — delta D52.

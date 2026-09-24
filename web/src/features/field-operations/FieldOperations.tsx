@@ -39,6 +39,7 @@ import type {
   Alert,
   FieldOfficer,
   RecommendationType,
+  PlaceCallResponse,
   SendSmsResponse,
   Severity,
 } from '@/domain/types';
@@ -715,9 +716,12 @@ export function FieldOperations() {
 }
 
 /**
- * SMS one officer about one alert (Phase 6A). The operator picks both; the server looks up the
- * number and writes the text, so neither is editable here. In demo mode the send is simulated
- * and labelled as such.
+ * Reach one officer about one alert, by SMS or by phone (Phase 6A, voice added in 6D).
+ *
+ * The operator picks the officer and the alert; the server looks up the number and writes the
+ * words, so neither is editable here. Both channels are idempotent server-side, so a second
+ * press reports what already went out rather than sending it twice. In demo mode both are
+ * simulated and labelled as such.
  */
 function SmsComposer({
   officers,
@@ -731,20 +735,29 @@ function SmsComposer({
   const [officerId, setOfficerId] = useState('');
   const [alertId, setAlertId] = useState('');
   const [result, setResult] = useState<SendSmsResponse>();
+  const [callResult, setCallResult] = useState<PlaceCallResponse>();
   const chosenOfficer = officers.find((o) => o.id === officerId) ?? officers[0];
   const chosenAlert = alerts.find((a) => a.id === alertId) ?? alerts[0];
 
   const send = useAction(async () => {
     setResult(undefined);
+    setCallResult(undefined);
     if (!chosenOfficer || !chosenAlert) return;
     setResult(await dataSource.sendSms({ officerId: chosenOfficer.id, alertId: chosenAlert.id }));
+  });
+
+  const call = useAction(async () => {
+    setResult(undefined);
+    setCallResult(undefined);
+    if (!chosenOfficer || !chosenAlert) return;
+    setCallResult(await dataSource.placeCall({ officerId: chosenOfficer.id, alertId: chosenAlert.id }));
   });
 
   if (!canSend || officers.length === 0 || alerts.length === 0) return null;
 
   return (
     <div className="mb-3 flex flex-col gap-2 rounded-panel border border-line bg-panel-alt px-3 py-2.5">
-      <SectionLabel>Send SMS to officer</SectionLabel>
+      <SectionLabel>Notify an officer</SectionLabel>
       <div className="grid grid-cols-2 gap-2">
         <select
           className="field"
@@ -775,20 +788,51 @@ function SmsComposer({
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10.5px] leading-snug text-ink-3">
           {isDemoMode
-            ? 'Demo mode: the SMS is simulated, nothing is sent.'
-            : `An SMS about this alert will be sent to ${chosenOfficer?.name}'s phone on file.`}
+            ? 'Demo mode: both channels are simulated, nothing is sent and no phone rings.'
+            : `Sent to ${chosenOfficer?.name}'s phone on file. A call reads the alert aloud.`}
         </p>
-        <Button variant="primary" size="sm" icon="notify" pending={send.pending} onClick={send.run}>
-          Send SMS
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="call"
+            pending={call.pending}
+            disabled={send.pending}
+            onClick={call.run}
+          >
+            Call officer
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            icon="notify"
+            pending={send.pending}
+            disabled={call.pending}
+            onClick={send.run}
+          >
+            Send SMS
+          </Button>
+        </div>
       </div>
-      {send.error ? (
-        <p className="text-[11px] font-medium text-risk-critical">{send.error.message}</p>
+      {send.error || call.error ? (
+        <p className="text-[11px] font-medium text-risk-critical">
+          {(send.error ?? call.error)!.message}
+        </p>
       ) : result ? (
         <p className="text-[11px] font-medium text-risk-low">
-          {result.sms.simulated
-            ? `Simulated SMS logged for ${result.notification.recipientName} (DEMO — not sent).`
-            : `SMS sent to ${result.notification.recipientName} (${result.sms.to}${result.sms.redirected ? ', delivered to the configured test number' : ''}) · ${result.sms.sid}`}
+          {result.duplicate
+            ? `Already sent to ${result.notification.recipientName} — nothing sent again.`
+            : result.sms.simulated
+              ? `Simulated SMS logged for ${result.notification.recipientName} (DEMO — not sent).`
+              : `SMS sent to ${result.notification.recipientName} (${result.sms.to}${result.sms.redirected ? ', delivered to the configured test number' : ''}) · ${result.sms.sid}`}
+        </p>
+      ) : callResult ? (
+        <p className="text-[11px] font-medium text-risk-low">
+          {callResult.duplicate
+            ? `Already called ${callResult.notification.recipientName} — no second call placed.`
+            : callResult.call.simulated
+              ? `Simulated call logged for ${callResult.notification.recipientName} (DEMO — no phone rang).`
+              : `Calling ${callResult.notification.recipientName} (${callResult.call.to}${callResult.call.redirected ? ', placed to the configured test number' : ''}) · ${callResult.call.sid}`}
         </p>
       ) : null}
     </div>

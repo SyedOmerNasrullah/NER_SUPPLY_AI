@@ -32,6 +32,8 @@ import type {
   NotificationsResponse,
   RouteComparisonResponse,
   ResetDemoResponse,
+  PlaceCallRequest,
+  PlaceCallResponse,
   SendSmsRequest,
   SendSmsResponse,
   RiskSegmentsResponse,
@@ -78,6 +80,24 @@ import {
 
 /** Simulated SMS in this session — a counter, so ids are deterministic. */
 let simulatedSmsCount = 0;
+
+/**
+ * What the officer would hear, mirroring the server's `composeAlertCall`. Demo mode cannot
+ * import the server module, so the shape is repeated here — and nothing is invented: it reads
+ * the alert row and nothing else.
+ */
+function demoCallScript(alert: { severity: string; title: string; message: string }): string {
+  const speak = (t: string) => t.replace(/[\u2013\u2014]/g, ' to ').replace(/\s+/g, ' ').trim();
+  return [
+    'This is an N E R Supply A I alert.',
+    `${alert.severity.toLowerCase()} severity.`,
+    `${speak(alert.title.replace(/\.$/, ''))}.`,
+    speak(alert.message),
+    'Please check the N E R Supply A I dashboard for operational impact and recommended response.',
+  ].join(' ');
+}
+
+let simulatedCallCount = 0;
 
 /**
  * The Decision Engine's own thresholds, mirrored from PROJECT_CONTRACT §6. The demo adapter runs
@@ -378,6 +398,77 @@ export const demoSource: DataSource = {
           to: masked,
           redirected: false,
           body: `NER-SupplyAI ${alert.severity} ALERT: ${alert.title}. Check the NER-SupplyAI dashboard.`,
+          simulated: true,
+        },
+      },
+      600,
+    );
+  },
+
+  /**
+   * Simulated, and says so — the voice half of the same story as `sendSms`.
+   *
+   * Demo mode has no server and no Twilio, so no phone rings. The same checks the API makes
+   * (officer exists, alert exists, the number on file is usable) still run, and the row is
+   * logged on the CALL channel, so the flow and the notification log behave the same.
+   */
+  async placeCall(body: PlaceCallRequest): Promise<PlaceCallResponse> {
+    const world = getWorld();
+    const officer = FIELD_OFFICERS.find((o) => o.id === body.officerId);
+    const alert = world.alerts.find((a) => a.id === body.alertId);
+    if (!officer) throw new DataError(404, 'Officer not found.');
+    if (!alert) throw new DataError(404, 'Alert not found.');
+    const phone = officer.phone?.replace(/[\s\-().]/g, '');
+    if (!phone || !/^\+[1-9]\d{7,14}$/.test(phone)) {
+      throw new DataError(422, `${officer.name} has no valid phone number on file.`);
+    }
+
+    // The same idempotency the API enforces, so a double-click behaves the same in a rehearsal
+    // as it does against the real server: one alert to one officer on one channel, once.
+    const already = world.notifications.find(
+      (n) => n.alertId === alert.id && n.channel === 'CALL' && n.recipientName === officer.name,
+    );
+    if (already) {
+      return delay(
+        {
+          notification: clone(already),
+          duplicate: true,
+          call: {
+            providerStatus: 'simulated',
+            to: already.recipientPhone ?? '',
+            redirected: false,
+            script: demoCallScript(alert),
+            simulated: true,
+          },
+        },
+        300,
+      );
+    }
+
+    simulatedCallCount += 1;
+    const masked = `${phone.slice(0, 3)}${'•'.repeat(phone.length - 5)}${phone.slice(-2)}`;
+    const notification: NotificationRecord = {
+      id: `demo-call-${simulatedCallCount}`,
+      alertId: alert.id,
+      alertTitle: alert.title,
+      channel: 'CALL',
+      status: 'SENT',
+      recipientName: officer.name,
+      recipientRole: 'FIELD_OFFICER',
+      recipientPhone: masked,
+      sentAt: minutesAhead(0),
+      relatedId: alert.relatedId,
+    };
+    world.notifications = [notification, ...world.notifications];
+    return delay(
+      {
+        notification: clone(notification),
+        duplicate: false,
+        call: {
+          providerStatus: 'simulated',
+          to: masked,
+          redirected: false,
+          script: demoCallScript(alert),
           simulated: true,
         },
       },
