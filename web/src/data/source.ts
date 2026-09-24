@@ -29,6 +29,7 @@ import type {
   ExplainResponse,
   ResetDemoResponse,
   RouteComparisonResponse,
+  MlStatus,
   PlaceCallRequest,
   PlaceCallResponse,
   SendSmsRequest,
@@ -105,6 +106,7 @@ export interface DataSource {
   /** Dispatched notifications, newest first (contract delta D16). */
   getNotifications(): Promise<NotificationsResponse>;
   /** SMS one officer about one alert (Phase 6A). Demo mode simulates; it never sends. */
+  getMlStatus(): Promise<MlStatus>;
   sendSms(body: SendSmsRequest): Promise<SendSmsResponse>;
   placeCall(body: PlaceCallRequest): Promise<PlaceCallResponse>;
 

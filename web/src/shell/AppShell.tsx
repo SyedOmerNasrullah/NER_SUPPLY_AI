@@ -30,7 +30,7 @@ import { ErrorBoundary } from '@/app/ErrorBoundary';
 import { capabilitiesFor } from '@/app/modules';
 import { dataSource, isDemoMode } from '@/data';
 import { appNowIso } from '@/data/clock';
-import { useAction, useAlerts } from '@/data/hooks';
+import { useAction, useAlerts, useResource } from '@/data/hooks';
 import { TopBar } from './TopBar';
 import { ModuleTabs } from './ModuleTabs';
 import { StatusRail } from './StatusRail';
@@ -93,6 +93,8 @@ export function AppShell() {
   // no transport to lose — and this becomes the real connection state then.
   const live = true;
 
+  const mlStatus = useResource(() => dataSource.getMlStatus(), []);
+
   const alertCount = useMemo(
     () =>
       (alerts.data?.alerts ?? []).filter((a) => a.severity === 'CRITICAL' || a.severity === 'HIGH')
@@ -105,6 +107,44 @@ export function AppShell() {
   }, []);
 
   if (!user) return null;
+
+  /**
+   * What the rail says about the models — delta D55.
+   *
+   * This used to be inferred from the data source alone, so it announced `route-risk-xgb-v1`
+   * in API mode whether or not the service was answering, and said "not connected" in demo mode
+   * without distinguishing "there is no model here" from "the model is down". Three different
+   * situations, two labels, and the one that mattered most during a demonstration — the service
+   * has fallen over — looked exactly like the healthy case.
+   *
+   * It now reports what `GET /api/ml/status` actually said.
+   */
+  const modelStatus = useMemo(() => {
+    if (isDemoMode) {
+      return {
+        value: 'demo fixtures',
+        tone: 'muted' as const,
+        title:
+          'This build calls no model service. Risk values are seeded fixtures standing in for XGBoost output, and every panel is labelled accordingly.',
+      };
+    }
+    if (mlStatus.loading) {
+      return { value: 'checking…', tone: 'muted' as const, title: 'Asking the model service whether it is up.' };
+    }
+    const service = mlStatus.data?.service;
+    if (!service?.reachable) {
+      return {
+        value: 'unreachable',
+        tone: 'bad' as const,
+        title: `The model service is configured but not answering${service?.reason ? ` (${service.reason})` : ''}. Scores on screen are the last ones stored, not fresh predictions.`,
+      };
+    }
+    return {
+      value: `${service.modelVersion ?? 'model'} · XGBoost + SHAP`,
+      tone: 'good' as const,
+      title: `Connected. ${service.modelVersion ?? 'Route risk'} and ${service.deliveryModelVersion ?? 'delivery risk'} are loaded and serving predictions, explained by SHAP.`,
+    };
+  }, [mlStatus.loading, mlStatus.data]);
 
   return (
     <ShellCtx.Provider value={value}>
@@ -153,10 +193,9 @@ export function AppShell() {
             {
               icon: 'model',
               label: 'Models',
-              value: isDemoMode ? 'not connected' : 'route-risk-xgb-v1',
-              title: isDemoMode
-                ? 'The XGBoost service is not called in demo mode. Risk values are seeded fixtures standing in for model output.'
-                : 'Serving predictions from the FastAPI model service.',
+              value: modelStatus.value,
+              title: modelStatus.title,
+              tone: modelStatus.tone,
             },
             {
               icon: 'weather',

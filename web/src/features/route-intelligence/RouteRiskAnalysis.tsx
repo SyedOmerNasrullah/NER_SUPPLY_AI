@@ -120,6 +120,13 @@ export function RouteRiskAnalysis({
         factors={route.topFactors}
         level={route.riskLevel}
         explanation={route.explanationText}
+        // When the score came from the model, so did this sentence: `scoreCorridor` narrates
+        // the factors it actually used and stores that beside the prediction. Labelling it
+        // "Seeded text" underneath real SHAP was the same kind of untruth this phase exists
+        // to remove.
+        explanationSource={
+          route.riskSource === 'ML_PREDICTION' ? 'DETERMINISTIC_TEMPLATE' : 'SYNTHETIC_OPERATIONAL'
+        }
         routeName={route.name}
         heading="Why is this route risky?"
       />

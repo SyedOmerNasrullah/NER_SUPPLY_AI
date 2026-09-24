@@ -15,6 +15,7 @@
  */
 
 import { cn } from '@/lib/cn';
+import { SimulateLandslide } from './SimulateLandslide';
 import { formatNumber } from '@/domain/format';
 import type { WeatherConditions } from '@/domain/types';
 import { Icon, ProvenanceTag } from '@/design/primitives';
@@ -131,6 +132,10 @@ export function ConditionsPanel({
             onNavy
             className="justify-end px-1"
           />
+
+          {/* The second demonstration trigger: one landslide, the whole chain. Same panel and
+              the same styling as the rainfall control, because it is the same kind of thing. */}
+          <SimulateLandslide />
         </div>
       ) : (
         <div className="flex items-end pb-1">

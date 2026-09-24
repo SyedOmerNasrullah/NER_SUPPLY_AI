@@ -24,7 +24,18 @@ export function StatusRail({
   live: boolean;
   demoMode: boolean;
   /** Left-to-right readouts. Each is icon + label + value. */
-  segments: { icon: IconName; label: string; value: ReactNode; title?: string }[];
+  segments: {
+    icon: IconName;
+    label: string;
+    value: ReactNode;
+    title?: string;
+    /**
+     * How the value reads. `good` and `bad` are for a live state an operator should notice at a
+     * glance — the model service answering, or not answering — and `muted` is the default for
+     * a fact that is simply true. Absent behaves as `muted`.
+     */
+    tone?: 'good' | 'bad' | 'muted';
+  }[];
   right?: ReactNode;
   className?: string;
 }) {
@@ -57,7 +68,27 @@ export function StatusRail({
           <span className="inline-flex items-center gap-1.5" title={s.title}>
             <Icon name={s.icon} size="sm" className="opacity-60" />
             <span className="hidden lg:inline">{s.label}</span>
-            <span className="tnum font-semibold text-ink-2">{s.value}</span>
+            <span
+              className={cn(
+                'tnum font-semibold',
+                s.tone === 'good'
+                  ? 'text-risk-low'
+                  : s.tone === 'bad'
+                    ? 'text-risk-critical'
+                    : 'text-ink-2',
+              )}
+            >
+              {s.tone === 'good' || s.tone === 'bad' ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    'mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle',
+                    s.tone === 'good' ? 'bg-risk-low' : 'bg-risk-critical',
+                  )}
+                />
+              ) : null}
+              {s.value}
+            </span>
           </span>
           {i < segments.length - 1 ? <Divider /> : null}
         </span>

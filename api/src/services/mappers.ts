@@ -30,6 +30,7 @@ import type {
   VehicleMovement as PrismaMovement,
   Warehouse as PrismaWarehouse,
 } from '@prisma/client';
+import type { StoredRoutePrediction } from './routeRiskScoring';
 
 /** Prisma's `null` -> the contract's `undefined`. */
 const opt = <T>(value: T | null): T | undefined => (value === null ? undefined : value);
@@ -203,20 +204,48 @@ export const toRecommendation = (r: PrismaRecommendation) => ({
   confidence: r.confidence,
 });
 
-export const toRouteCandidate = (r: PrismaRoute) => ({
+/**
+ * A candidate, preferring the model's own answer over the seeded one (Phase 6E, delta D55).
+ *
+ * `scoreCorridor` writes real predictions with real SHAP into `RiskPrediction`; nothing used to
+ * read them, so this endpoint served the seeded `Route.riskScore` and the hand-authored
+ * `Route.topFactors` while the page above it claimed "Model prediction". When a prediction
+ * exists it now wins, and `riskSource` says which answer the caller is looking at — so the UI
+ * can label a seeded fallback as seeded instead of dressing it up as XGBoost.
+ */
+export const toRouteCandidate = (r: PrismaRoute, ml?: StoredRoutePrediction) => ({
   id: r.id,
   name: r.name,
   distanceKm: r.distanceKm,
   etaMinutes: r.etaMinutes,
   geometry: (r.geometry ?? []) as [number, number][],
-  riskScore: r.riskScore,
-  riskLevel: r.riskLevel,
+  riskScore: ml?.riskScore ?? r.riskScore,
+  riskLevel: ml?.riskLevel ?? r.riskLevel,
+  /** "ML_PREDICTION" when the model answered, "SEEDED" when this is the fixture. */
+  riskSource: ml ? ('ML_PREDICTION' as const) : ('SEEDED' as const),
+  modelVersion: ml?.modelVersion,
+  shapBaseValue: ml?.shapBaseValue ?? undefined,
+  scoredAt: ml?.predictedAt,
   isRecommended: r.isRecommended,
   // Per-candidate SHAP (delta D8). The contract says never empty for a scored candidate, so an
   // empty array here is a seeding bug rather than a legal state — it is passed through as-is so
   // it shows up rather than being masked.
-  topFactors: jsonArray<{ factor: string; contributionPct: number }>(r.topFactors) ?? [],
-  explanationText: r.explanationText ?? '',
+  // Real SHAP when the model answered, the seeded ladder otherwise. `riskSource` above says
+  // which, so a reader never has to guess whether a contribution came from a model.
+  //
+  // SHAP percentages arrive as full doubles (55.79999923706055). The seeded ladder was whole
+  // numbers, so nothing ever had to round them; rounding here keeps every caller from having
+  // to, and one decimal is more precision than a contribution bar can show anyway.
+  topFactors: (
+    (ml
+      ? jsonArray<{ factor: string; contributionPct: number }>(ml.topFactors)
+      : jsonArray<{ factor: string; contributionPct: number }>(r.topFactors)) ?? []
+  ).map((f) => ({ ...f, contributionPct: Math.round(f.contributionPct * 10) / 10 })),
+  // The seeded prose describes the seeded score. Once the row is showing a model score it can
+  // contradict it outright — "the direct corridor is clear" above a MEDIUM 59 driven by road
+  // condition. `scoreCorridor` stores its own narration of the factors it actually used, so
+  // when the score is the model's the sentence is too.
+  explanationText: ml?.explanationText ?? r.explanationText ?? '',
   profile: (r.profile ?? undefined) as Record<string, unknown> | undefined,
   elevationProfile: jsonArray<Record<string, unknown>>(r.elevationProfile),
   // Delta D39 — the corridor segments this route travels, in segment order.

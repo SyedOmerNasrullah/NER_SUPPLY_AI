@@ -192,3 +192,58 @@ export async function compare(scenario: Scenario, modelVersion = 'route-risk-xgb
     ...segments.map((s) => row('SEGMENT', s.id, s.code)),
   ];
 }
+
+// ---------------------------------------------------------------------------
+// Reading predictions back (Phase 6E)
+// ---------------------------------------------------------------------------
+
+/** The model's own answer for one route, as stored by `scoreCorridor`. */
+export interface StoredRoutePrediction {
+  riskScore: number;
+  riskLevel: string;
+  /** Real SHAP, as returned by the model service — not the seeded ladder. */
+  topFactors: unknown;
+  /** The deterministic narration `scoreCorridor` stored beside the prediction. */
+  explanationText: string;
+  modelVersion: string;
+  shapBaseValue: number | null;
+  scenario: string | null;
+  predictedAt: string;
+}
+
+/**
+ * The newest ML prediction for each of these routes, or nothing.
+ *
+ * `scoreCorridor` has always written real predictions, with real SHAP, into `RiskPrediction` —
+ * and until now nothing read them back, so `/routes/candidates` went on serving the seeded
+ * `Route.riskScore` and the hand-authored `Route.topFactors`. The model ran and its answer was
+ * discarded before it reached a screen.
+ *
+ * Only `provenance = 'ML_PREDICTION'` rows qualify. A seeded or replayed demo score is stored on
+ * the same table under `DETERMINISTIC_DEMO`, and the whole point of that column is that the two
+ * can never be confused for each other.
+ */
+export async function latestRoutePredictions(
+  routeIds: string[],
+): Promise<Map<string, StoredRoutePrediction>> {
+  if (routeIds.length === 0) return new Map();
+  const rows = await prisma.riskPrediction.findMany({
+    where: { entityType: 'ROUTE', routeId: { in: routeIds }, provenance: 'ML_PREDICTION' },
+    orderBy: { createdAt: 'desc' },
+  });
+  const latest = new Map<string, StoredRoutePrediction>();
+  for (const r of rows) {
+    if (!r.routeId || latest.has(r.routeId)) continue; // rows are newest-first
+    latest.set(r.routeId, {
+      riskScore: r.riskScore,
+      riskLevel: r.riskLevel,
+      topFactors: r.topFactors,
+      explanationText: r.explanationText,
+      modelVersion: r.modelVersion,
+      shapBaseValue: r.shapBaseValue,
+      scenario: r.scenario,
+      predictedAt: r.createdAt.toISOString(),
+    });
+  }
+  return latest;
+}

@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { latestRoutePredictions } from '../services/routeRiskScoring';
 import { ApiError, asyncRoute } from '../middleware/errors';
 import {
   toAlert,
@@ -99,8 +100,28 @@ api.post(
     // Phase 4A returns the seeded corridor candidates. Generating routes for arbitrary
     // coordinates is OpenRouteService's job and belongs to a later phase — so this deliberately
     // ignores the request body rather than pretending to have routed anything.
+    //
+    // Phase 6E: the score and its factors now come from the newest ML prediction for each route
+    // when one exists. Every candidate carries `riskSource`, so a seeded fallback is visible as
+    // a seeded fallback rather than passing for model output.
     const routes = await prisma.route.findMany({ orderBy: { name: 'asc' } });
-    res.json({ candidates: routes.map(toRouteCandidate) });
+    const predictions = await latestRoutePredictions(routes.map((r) => r.id));
+    const candidates = routes.map((r) => toRouteCandidate(r, predictions.get(r.id)));
+
+    // `isRecommended` is the seeded "BEST" flag, and it means one thing: the lowest-risk
+    // candidate. Once the scores on the row are the model's, the seeded flag can contradict
+    // them outright — Route A carrying BEST at risk 59 while Route B sits at 44. So when every
+    // candidate has been scored by the model, the flag follows the scores it is labelling.
+    //
+    // This is not the decision engine and does not touch it. REROUTE still requires risk >= 70
+    // AND a candidate at least 15 points safer; that ladder is untouched and still lives in
+    // `decision.ts`. This only decides which candidate wears the chip.
+    if (candidates.length > 0 && candidates.every((c) => c.riskSource === 'ML_PREDICTION')) {
+      const best = candidates.reduce((a, b) => (b.riskScore < a.riskScore ? b : a));
+      for (const c of candidates) c.isRecommended = c.id === best.id;
+    }
+
+    res.json({ candidates });
   }),
 );
 

@@ -152,6 +152,22 @@ export interface RouteCandidate {
   geometry: [number, number][];
   riskScore: number;
   riskLevel: RiskLevel;
+  /**
+   * Where `riskScore` and `topFactors` actually came from (delta D55).
+   *
+   * `ML_PREDICTION` — the newest stored prediction from `route-risk-xgb-v1`, with real SHAP.
+   * `SEEDED`        — the fixture column, because no model prediction exists for this route.
+   *
+   * The UI labels these differently. Absent from a source that cannot say, which the demo
+   * adapter is: it has no model and says so.
+   */
+  riskSource?: 'ML_PREDICTION' | 'SEEDED';
+  /** Present only when `riskSource` is `ML_PREDICTION`, e.g. `route-risk-xgb-v1`. */
+  modelVersion?: string;
+  /** SHAP expected value: riskScore = shapBaseValue + the contributions. */
+  shapBaseValue?: number;
+  /** When the model produced this answer. */
+  scoredAt?: string;
   isRecommended: boolean;
   /**
    * SHAP contributions for THIS candidate.
@@ -649,6 +665,30 @@ export interface RouteComparisonResponse {
  * officer's phone and builds the text from the alert. There is deliberately no phone or message
  * field here.
  */
+/**
+ * Whether the model service is actually answering — delta D55.
+ *
+ * The status rail used to infer this from the data source alone, so it announced
+ * `route-risk-xgb-v1` in API mode whether or not the service was reachable, and "not connected"
+ * in demo mode without distinguishing "no model here" from "the model is down". This is the
+ * real answer, from `GET /api/ml/status`.
+ */
+export interface MlStatus {
+  /** `demo` — this build has no model service at all. `live` — one is configured. */
+  mode: 'demo' | 'live';
+  /** Null in demo mode. */
+  service: {
+    reachable: boolean;
+    status?: string;
+    modelVersion?: string;
+    modelLoaded?: boolean;
+    deliveryModelVersion?: string;
+    deliveryModelLoaded?: boolean;
+    /** Why it could not be reached, when it could not. */
+    reason?: string;
+  } | null;
+}
+
 export interface SendSmsRequest {
   officerId: string;
   alertId: string;

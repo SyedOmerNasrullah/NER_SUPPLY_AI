@@ -59,6 +59,7 @@ export const dataSource: DataSource = {
     invalidateRequestCache();
     return result;
   },
+  getMlStatus: () => deduped(cacheKey('getMlStatus'), () => selected.getMlStatus()),
   sendSms: async (body) => {
     const result = await selected.sendSms(body);
     invalidateRequestCache();

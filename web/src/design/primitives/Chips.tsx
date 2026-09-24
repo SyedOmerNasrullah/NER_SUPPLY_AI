@@ -8,6 +8,7 @@
 
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { isDemoMode } from '@/data';
 import { humanizeEnum } from '@/domain/format';
 import {
   DELIVERY_STATUS_LEVEL,
@@ -319,7 +320,25 @@ export function ProvenanceTag({
   onNavy?: boolean;
   className?: string;
 }) {
-  const meta = PROVENANCE_META[kind];
+  // The one claim this component must never get wrong.
+  //
+  // `ML_PREDICTION` used to render unconditionally, so nineteen panels announced "Model
+  // prediction" in demo mode — where no model is called and every number on screen is a
+  // fixture — while the status rail two lines below said "Models: not connected". Both were
+  // rendered from different sources and one of them was false.
+  //
+  // Demo mode now degrades the claim instead of making it. Nothing else about the component
+  // changes, so no page had to be touched to stop it lying.
+  const effective: Provenance =
+    kind === 'ML_PREDICTION' && isDemoMode ? 'SYNTHETIC_OPERATIONAL' : kind;
+  const meta =
+    kind === 'ML_PREDICTION' && isDemoMode
+      ? {
+          ...PROVENANCE_META[effective],
+          label: 'Demo fixture',
+          hint: 'Demo mode calls no model. This value is a seeded fixture standing in for XGBoost output — run the API-backed build to see a real prediction.',
+        }
+      : PROVENANCE_META[effective];
   return (
     <span
       title={meta.hint}

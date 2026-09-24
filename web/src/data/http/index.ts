@@ -31,6 +31,7 @@ import type {
   ExplainResponse,
   NotificationsResponse,
   RouteComparisonResponse,
+  MlStatus,
   PlaceCallRequest,
   PlaceCallResponse,
   SendSmsRequest,
@@ -164,6 +165,7 @@ export const httpSource: DataSource = {
   getSummary: () => request<SummaryResponse>(() => http.get('/api/summary')),
   getRecentMovements: () => request<MovementsResponse>(() => http.get('/api/movements')),
   getNotifications: () => request<NotificationsResponse>(() => http.get('/api/notifications')),
+  getMlStatus: () => request<MlStatus>(() => http.get('/api/ml/status', { timeout: 8_000 })),
   sendSms: (body: SendSmsRequest) =>
     request<SendSmsResponse>(() => http.post('/api/notifications/sms', body, { timeout: 30_000 })),
   placeCall: (body: PlaceCallRequest) =>

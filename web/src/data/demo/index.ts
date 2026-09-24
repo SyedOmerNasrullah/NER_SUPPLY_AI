@@ -32,6 +32,7 @@ import type {
   NotificationsResponse,
   RouteComparisonResponse,
   ResetDemoResponse,
+  MlStatus,
   PlaceCallRequest,
   PlaceCallResponse,
   SendSmsRequest,
@@ -365,6 +366,14 @@ export const demoSource: DataSource = {
    * notification is logged as SENT with `simulated: true`, and the same checks the API makes
    * (officer exists, has a valid phone) still apply, so the flow behaves the same.
    */
+  /**
+   * Demo mode has no model service, and says exactly that rather than reporting an outage.
+   * `mode: 'demo'` is not a failure state — it means the numbers on screen are fixtures.
+   */
+  async getMlStatus(): Promise<MlStatus> {
+    return delay({ mode: 'demo' as const, service: null }, 80);
+  },
+
   async sendSms(body: SendSmsRequest): Promise<SendSmsResponse> {
     const world = getWorld();
     const officer = FIELD_OFFICERS.find((o) => o.id === body.officerId);
