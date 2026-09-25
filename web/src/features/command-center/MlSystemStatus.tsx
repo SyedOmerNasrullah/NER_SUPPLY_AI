@@ -19,7 +19,7 @@ import { cn } from '@/lib/cn';
 import type { MlStatus } from '@/domain/types';
 import { Icon } from '@/design/primitives';
 
-type Tone = 'live' | 'rules' | 'down' | 'demo' | 'checking';
+type Tone = 'live' | 'rules' | 'down' | 'demo' | 'checking' | 'ready' | 'absent';
 
 const TONE: Record<Tone, { dot: string; text: string; label: string }> = {
   live: { dot: 'bg-risk-low', text: 'text-risk-low', label: 'LIVE' },
@@ -30,6 +30,10 @@ const TONE: Record<Tone, { dot: string; text: string; label: string }> = {
   // and showing the second while the first is true reads as a claim the build cannot support —
   // on camera it appeared beside a live model version, which is the worst of both.
   checking: { dot: 'bg-ink-3 animate-pulse', text: 'text-ink-3', label: 'CHECKING' },
+  // Configured and callable, but nothing has been sent. "READY" claims less than "LIVE" on
+  // purpose: the server holds credentials for these, which is not the same as having used them.
+  ready: { dot: 'bg-risk-low', text: 'text-risk-low', label: 'READY' },
+  absent: { dot: 'bg-ink-3', text: 'text-ink-3', label: 'NOT CONFIGURED' },
 };
 
 function Row({ name, detail, tone }: { name: string; detail: string; tone: Tone }) {
@@ -69,11 +73,13 @@ export function MlSystemStatus({
       : reachable && service?.modelLoaded
         ? 'live'
         : 'down';
+  // An explicit `true`, not "anything other than false". The field used to be stripped before
+  // it reached here, so an absent value quietly rendered as LIVE — a claim nothing had checked.
   const deliveryTone: Tone = demo
     ? 'demo'
     : pending
       ? 'checking'
-      : reachable && service?.deliveryModelLoaded !== false
+      : reachable && service?.deliveryModelLoaded === true
         ? 'live'
         : 'down';
   const shapTone: Tone = demo
@@ -87,7 +93,7 @@ export function MlSystemStatus({
   return (
     <div
       className={cn(
-        'flex w-[226px] shrink-0 flex-col rounded-panel border border-white/12 bg-white/[0.06] px-3 py-2 backdrop-blur-sm',
+        'flex w-[236px] shrink-0 flex-col rounded-panel border border-white/12 bg-white/[0.06] px-3 py-2 backdrop-blur-sm',
         className,
       )}
     >
@@ -111,6 +117,16 @@ export function MlSystemStatus({
         />
         <Row name="SHAP" detail="TreeExplainer attribution" tone={shapTone} />
         <Row name="Decision engine" detail="Deterministic rules, not a model" tone="rules" />
+        <Row
+          name="ORS routing"
+          detail={demo ? 'committed geometry artifact' : 'road geometry + elevation'}
+          tone={demo ? 'demo' : pending ? 'checking' : status?.services?.ors ? 'ready' : 'absent'}
+        />
+        <Row
+          name="Twilio"
+          detail="SMS / voice to officers"
+          tone={demo ? 'demo' : pending ? 'checking' : status?.services?.twilio ? 'ready' : 'absent'}
+        />
       </div>
 
       {!demo && !reachable && !pending ? (

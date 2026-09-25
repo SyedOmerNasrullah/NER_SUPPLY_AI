@@ -20,6 +20,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../config/env';
+import { orsConfigured } from '../services/ors';
+import { smsConfigured } from '../services/twilio';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { ApiError, asyncRoute } from '../middleware/errors';
 import { MlError, mlHealthCheck } from '../services/mlClient';
@@ -31,18 +33,24 @@ export const ml = Router();
 ml.get(
   '/ml/status',
   asyncRoute(async (_req, res) => {
+    // Whether the two outbound integrations are configured on THIS server. Booleans only: no
+    // key, no account id, no number, nothing that could identify a credential. A status panel
+    // needs to know that ORS and Twilio can be reached; it never needs to know with what.
+    const services = { ors: orsConfigured(), twilio: smsConfigured() };
+
     if (env.ml.mode === 'demo') {
-      res.json({ mode: 'demo', service: null });
+      res.json({ mode: 'demo', service: null, services });
       return;
     }
     try {
       const health = await mlHealthCheck();
-      res.json({ mode: 'live', service: { reachable: true, ...health } });
+      res.json({ mode: 'live', service: { reachable: true, ...health }, services });
     } catch (err) {
       // Status reports the outage rather than failing: "the model is down" is an answer.
       res.json({
         mode: 'live',
         service: { reachable: false, reason: err instanceof MlError ? err.kind : 'UNAVAILABLE' },
+        services,
       });
     }
   }),

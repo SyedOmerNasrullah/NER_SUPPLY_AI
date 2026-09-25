@@ -718,6 +718,14 @@ export interface MlStatus {
     /** Why it could not be reached, when it could not. */
     reason?: string;
   } | null;
+  /**
+   * Whether the server's two outbound integrations are configured — delta D59.
+   *
+   * Booleans, deliberately: enough to say CONNECTED or NOT CONFIGURED, and nothing that could
+   * identify a key, an account or a number. Absent from a server that predates this field, and
+   * absent must read as "unknown" rather than "ready".
+   */
+  services?: { ors: boolean; twilio: boolean };
 }
 
 export interface SendSmsRequest {

@@ -34,6 +34,8 @@ import { useAction, useAlerts, useResource } from '@/data/hooks';
 import { TopBar } from './TopBar';
 import { ModuleTabs } from './ModuleTabs';
 import { StatusRail } from './StatusRail';
+import { AiDemoPanel, StartAiDemoButton } from '@/features/ai-demo/AiDemoPanel';
+import { AiDemoProvider } from '@/features/ai-demo/context';
 
 interface ShellState {
   /** A page mounts controls into the tab bar's right slot for as long as it is on screen. */
@@ -148,6 +150,7 @@ export function AppShell() {
 
   return (
     <ShellCtx.Provider value={value}>
+      <AiDemoProvider>
       <div className="flex h-full min-h-0 flex-col bg-ground">
         <TopBar
           user={user}
@@ -174,11 +177,16 @@ export function AppShell() {
             navigation, alerts and the status rail intact, so the operator moves to another
             module instead of losing the console. Keying it on the pathname means that move
             also clears the error. */}
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <ErrorBoundary resetKey={pathname}>
-            <Outlet />
-          </ErrorBoundary>
-        </main>
+        {/* The page and the demonstration rail share this row. The rail renders nothing at all
+            unless a demonstration is running, so normal use is byte-for-byte what it was. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <main className="min-h-0 flex-1 overflow-hidden">
+            <ErrorBoundary resetKey={pathname}>
+              <Outlet />
+            </ErrorBoundary>
+          </main>
+          <AiDemoPanel />
+        </div>
 
         <StatusRail
           live={live}
@@ -204,9 +212,17 @@ export function AppShell() {
               title: 'Weather inputs come from the seeded snapshot, overwritten by the simulate control.',
             },
           ]}
-          right={railNote}
+          // The demonstration is opt-in and lives in the persistent chrome, so it is reachable
+          // from any page and absent from none — and it disappears entirely once running.
+          right={
+            <div className="flex items-center gap-3">
+              <StartAiDemoButton />
+              {railNote}
+            </div>
+          }
         />
       </div>
+      </AiDemoProvider>
     </ShellCtx.Provider>
   );
 }

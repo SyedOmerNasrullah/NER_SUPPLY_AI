@@ -100,6 +100,13 @@ const mlHealth = z.object({
   status: z.enum(['ok', 'degraded']),
   modelVersion: z.string(),
   modelLoaded: z.boolean(),
+  // The service has always reported the delivery model too; this schema dropped both fields on
+  // the way through, so callers could only ever infer its state from the route model's. A
+  // status panel then showed "Delivery risk: LIVE" because the field was absent rather than
+  // because anything had confirmed it. Optional, because an older service may not send them —
+  // and absent must read as "unknown", never as "loaded".
+  deliveryModelVersion: z.string().optional(),
+  deliveryModelLoaded: z.boolean().optional(),
   authConfigured: z.boolean(),
 });
 
