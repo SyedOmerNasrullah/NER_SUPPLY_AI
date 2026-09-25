@@ -599,6 +599,17 @@ export interface AlertsResponse {
 export interface SimulateRainResponse {
   updated: true;
   affectedSegmentIds: string[];
+  /**
+   * What the model said after the weather changed — delta D58.
+   *
+   * The simulation re-scores the corridor before it answers, so these are fresh predictions
+   * made under the new rainfall, not the ones on screen when the button was pressed. Absent
+   * when the model service could not be reached: the weather still changed, but nothing was
+   * re-scored, and the caller must not present stale scores as new ones.
+   */
+  rescored?: { label: string; riskScore: number }[] | null;
+  /** The model that produced `rescored`, e.g. `route-risk-xgb-v1`. */
+  modelVersion?: string | null;
 }
 export interface ResetDemoResponse {
   reset: true;

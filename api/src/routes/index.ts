@@ -202,6 +202,16 @@ api.get(
       prisma.route.findMany({ select: { id: true, name: true, geometry: true, riskScore: true, riskLevel: true } }),
     ]);
     const names = new Map(segments.map((s) => [s.id, s.name]));
+
+    // The corridor row quotes a route's risk, so it must quote the SAME risk the Routes page
+    // shows. `Route.riskScore` is the seeded column; overlaying the newest prediction stops the
+    // Incident Center saying "Route B · 28%" while Route Intelligence says 66 for the same
+    // route at the same moment (delta D58).
+    const predictions = await latestRoutePredictions(routes.map((r) => r.id));
+    const scored = routes.map((r) => {
+      const ml = predictions.get(r.id);
+      return ml ? { ...r, riskScore: ml.riskScore, riskLevel: ml.riskLevel as typeof r.riskLevel } : r;
+    });
     res.json({
       incidents: incidents.map((i) =>
         toIncident(
@@ -210,7 +220,7 @@ api.get(
           // Delta D49. Computed on read rather than stored: a route's geometry can change (ORS
           // will change all three), and a column written once would then describe a road that no
           // longer runs there.
-          nearestRoute(routes, i.lat, i.lng),
+          nearestRoute(scored, i.lat, i.lng),
         ),
       ),
     });

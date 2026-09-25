@@ -39,7 +39,7 @@ import {
   useWeather,
 } from '@/data/hooks';
 import { formatTime } from '@/domain/format';
-import { featuredDelivery } from '../shared/delivery';
+import { featuredDelivery, shortRouteName } from '../shared/delivery';
 import { Chip, Icon, ProvenanceTag } from '@/design/primitives';
 import { HeroBand, ImagePanel } from '@/shell/HeroBand';
 import { useShellRailNote } from '@/shell/AppShell';
@@ -47,6 +47,7 @@ import ridgeline from '@/assets/ner-ridgeline.jpg';
 import corridorRoad from '@/assets/ner-corridor-road.jpg';
 import { ConditionsPanel } from './ConditionsPanel';
 import { MlSystemStatus } from './MlSystemStatus';
+import { RescoreSummary, type RescoreRow } from './RescoreSummary';
 import { CorridorMapPanel } from './CorridorMapPanel';
 import { DeliveryIntelligencePanel } from './DeliveryIntelligencePanel';
 import { KpiStrip } from './KpiStrip';
@@ -117,7 +118,32 @@ export function CommandCenter() {
 
   // --- The demo control ---------------------------------------------------
   const mlStatus = useResource(() => dataSource.getMlStatus(), []);
-  const simulate = useAction(() => dataSource.simulateRain(DEMO_SEGMENT_ID));
+  /**
+   * The storm, and the model's answer to it — delta D58.
+   *
+   * The scores and the rainfall on screen are captured BEFORE the request goes out, because
+   * once it returns they are gone. `rescored` on the response is what the model said after the
+   * weather was written, so the two columns come from genuinely different moments and neither
+   * is derived from the other.
+   */
+  const [rescore, setRescore] = useState<{ rows: RescoreRow[]; modelVersion?: string | null }>();
+
+  const simulate = useAction(async () => {
+    const before = routeList.map((r) => ({ id: r.id, label: shortRouteName(r.name), risk: r.riskScore }));
+    const result = await dataSource.simulateRain(DEMO_SEGMENT_ID);
+    setRescore({
+      // Matched on the model's own label, so a route it did not score simply does not appear
+      // rather than being paired with the wrong row.
+      rows: (result.rescored ?? [])
+        .map((a) => {
+          const b = before.find((x) => x.label === a.label);
+          return b ? { label: a.label, before: b.risk, after: a.riskScore } : null;
+        })
+        .filter((r): r is RescoreRow => r !== null),
+      modelVersion: result.modelVersion,
+    });
+    return result;
+  });
   const simulated = weather.data?.weather.simulated ?? false;
 
   // The status rail carries the cascade's own state, so it is legible from anywhere on the page.
@@ -162,6 +188,15 @@ export function CommandCenter() {
           </div>
         }
       />
+
+      {rescore ? (
+        <div className="shrink-0 px-3 pt-3">
+          <RescoreSummary
+            rows={rescore.rows}
+            modelVersion={rescore.modelVersion}
+          />
+        </div>
+      ) : null}
 
       {/* ============================================================= KPI === */}
       <div className="shrink-0 px-3 pt-3">

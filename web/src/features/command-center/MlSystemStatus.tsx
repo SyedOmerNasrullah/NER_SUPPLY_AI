@@ -19,13 +19,17 @@ import { cn } from '@/lib/cn';
 import type { MlStatus } from '@/domain/types';
 import { Icon } from '@/design/primitives';
 
-type Tone = 'live' | 'rules' | 'down' | 'demo';
+type Tone = 'live' | 'rules' | 'down' | 'demo' | 'checking';
 
 const TONE: Record<Tone, { dot: string; text: string; label: string }> = {
   live: { dot: 'bg-risk-low', text: 'text-risk-low', label: 'LIVE' },
   rules: { dot: 'bg-brand-500', text: 'text-brand-700', label: 'ACTIVE' },
   down: { dot: 'bg-risk-critical', text: 'text-risk-critical', label: 'DOWN' },
   demo: { dot: 'bg-ink-3', text: 'text-ink-3', label: 'FIXTURES' },
+  // Not FIXTURES. "We have not asked yet" and "there is no model here" are different answers,
+  // and showing the second while the first is true reads as a claim the build cannot support —
+  // on camera it appeared beside a live model version, which is the worst of both.
+  checking: { dot: 'bg-ink-3 animate-pulse', text: 'text-ink-3', label: 'CHECKING' },
 };
 
 function Row({ name, detail, tone }: { name: string; detail: string; tone: Tone }) {
@@ -57,15 +61,28 @@ export function MlSystemStatus({
   const service = status?.service;
   const reachable = Boolean(service?.reachable);
 
-  const routeTone: Tone = demo ? 'demo' : loading ? 'demo' : reachable && service?.modelLoaded ? 'live' : 'down';
+  const pending = !demo && (loading || !status);
+  const routeTone: Tone = demo
+    ? 'demo'
+    : pending
+      ? 'checking'
+      : reachable && service?.modelLoaded
+        ? 'live'
+        : 'down';
   const deliveryTone: Tone = demo
     ? 'demo'
-    : loading
-      ? 'demo'
+    : pending
+      ? 'checking'
       : reachable && service?.deliveryModelLoaded !== false
         ? 'live'
         : 'down';
-  const shapTone: Tone = demo ? 'demo' : reachable && service?.modelLoaded ? 'live' : 'down';
+  const shapTone: Tone = demo
+    ? 'demo'
+    : pending
+      ? 'checking'
+      : reachable && service?.modelLoaded
+        ? 'live'
+        : 'down';
 
   return (
     <div
@@ -96,7 +113,7 @@ export function MlSystemStatus({
         <Row name="Decision engine" detail="Deterministic rules, not a model" tone="rules" />
       </div>
 
-      {!demo && !reachable && !loading ? (
+      {!demo && !reachable && !pending ? (
         <p className="mt-1 text-[9px] leading-snug text-risk-critical">
           Showing the last stored predictions, not fresh ones.
         </p>

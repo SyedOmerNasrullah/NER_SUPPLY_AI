@@ -611,6 +611,9 @@ export const demoSource: DataSource = {
 
   async simulateRain(segmentId): Promise<SimulateRainResponse> {
     const affectedSegmentIds = runRainCascade(segmentId);
+    // `rescored` is deliberately absent. The demo cascade moves fixture numbers around; no
+    // model was asked anything, so there is no model answer to report and the transition
+    // panel will say the scores came from fixtures rather than from a re-scoring run.
     return delay({ updated: true as const, affectedSegmentIds }, CASCADE_MS);
   },
 
